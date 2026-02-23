@@ -1,0 +1,74 @@
+<?php
+session_start();
+include __DIR__ . '/../config/db.php';
+
+if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'owner') {
+    header("Location: ../index.php");
+    exit;
+}
+
+if (isset($_GET['delete'])) {
+    $id = $conn->real_escape_string($_GET['delete']);
+    $conn->query("DELETE FROM member WHERE m_id = '$id'");
+    header("Location: manage_members.php");
+    exit;
+}
+
+$res = $conn->query("SELECT * FROM member ORDER BY m_id DESC");
+?>
+<!doctype html>
+<html lang="th">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ข้อมูลลูกค้า - Laundry</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <style>
+        :root { --primary: #2563EB; --bg: #F8FAFC; }
+        body { background: var(--bg); font-family: 'Segoe UI', sans-serif; }
+        .sidebar { width: 260px; height: 100vh; background: #fff; position: fixed; border-right: 1px solid #E2E8F0; padding: 20px; }
+        .main-content { margin-left: 260px; padding: 30px; }
+        .nav-link { color: #64748B; padding: 12px 15px; border-radius: 8px; margin-bottom: 5px; }
+        .nav-link.active { background: #EFF6FF; color: var(--primary); font-weight: 600; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h4 class="fw-bold text-primary mb-4 px-3">🧺 Shop Admin</h4>
+        <nav class="nav flex-column">
+            <a class="nav-link" href="owner_home.php"><i class="fa fa-home me-2"></i> หน้าแรก</a>
+            <a class="nav-link" href="manage_requests.php"><i class="fa fa-bell me-2"></i> คำขอรับผ้า</a>
+            <a class="nav-link" href="manage_orders.php"><i class="fa fa-file-invoice me-2"></i> รายการสั่งซื้อ</a>
+            <a class="nav-link" href="manage_services.php"><i class="fa fa-tags me-2"></i> จัดการบริการ</a>
+            <a class="nav-link active" href="manage_members.php"><i class="fa fa-users me-2"></i> ข้อมูลลูกค้า</a>
+            <a class="nav-link" href="manage_shop.php"><i class="fa fa-cog me-2"></i> ตั้งค่าร้านค้า</a>
+        </nav>
+    </div>
+
+    <div class="main-content">
+        <h2 class="fw-bold mb-4">ข้อมูลลูกค้าทั้งหมด</h2>
+
+        <div class="card border-0 shadow-sm rounded-4 p-4">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light"><tr><th>ID</th><th>ชื่อ-นามสกุล</th><th>อีเมล</th><th>เบอร์โทร</th><th>จัดการ</th></tr></thead>
+                    <tbody>
+                        <?php while($row = $res->fetch_assoc()): ?>
+                        <tr>
+                            <td><?= $row['m_id'] ?></td>
+                            <td class="fw-bold"><?= $row['m_name'] . ' ' . $row['m_lastname'] ?></td>
+                            <td><?= $row['m_mail'] ?></td>
+                            <td><?= $row['m_tel'] ?></td>
+                            <td>
+                                <a href="?delete=<?= $row['m_id'] ?>" class="text-danger" onclick="return confirm('ยืนยัน?')"><i class="fa fa-trash"></i></a>
+                            </td>
+                        </tr>
+                        <?php endwhile; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
