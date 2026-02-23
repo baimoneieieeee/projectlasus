@@ -99,10 +99,10 @@ if (isset($_POST['register'])) {
                 <label class="form-label">เบอร์โทรศัพท์</label>
                 <input type="text" name="tel" class="form-control" maxlength="10">
             </div>
-            <div class="mb-3">
+            <!-- <div class="mb-3">
                 <label class="form-label">ที่อยู่</label>
                 <textarea name="address" class="form-control" rows="2"></textarea>
-            </div>
+            </div> -->
             <button type="submit" name="register" class="btn btn-primary w-100">สมัครสมาชิก</button>
             <div class="text-center mt-3">
                 <a href="index.php" class="text-decoration-none">มีบัญชีอยู่แล้ว? เข้าสู่ระบบ</a>

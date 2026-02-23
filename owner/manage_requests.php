@@ -23,6 +23,19 @@ if (isset($_POST['confirm_request'])) {
         $conn->query("INSERT INTO orders (order_id, m_id, rq_id, order_date, order_status, order_sum) 
                       VALUES ('$order_id', '$m_id', '$rq_id', '$date', 1, 0)");
         
+        // 3. ถ้านำทางข้อมูลลูกค้ารายเดือน ให้นับครั้งที่รับผ้าเพิ่ม
+        $json_file = __DIR__ . '/../config/monthly_data.json';
+        if (file_exists($json_file)) {
+            $monthly_data = json_decode(file_get_contents($json_file), true);
+            if (isset($monthly_data[$m_id])) {
+                if (!isset($monthly_data[$m_id]['pickups_used'])) {
+                    $monthly_data[$m_id]['pickups_used'] = 0;
+                }
+                $monthly_data[$m_id]['pickups_used'] += 1; // นับเพิ่ม 1 ครั้ง
+                file_put_contents($json_file, json_encode($monthly_data, JSON_PRETTY_PRINT));
+            }
+        }
+        
         $conn->commit();
         header("Location: manage_orders.php");
         exit;
@@ -40,7 +53,7 @@ if (isset($_POST['reject_request'])) {
     exit;
 }
 
-$sql_reqs = "SELECT r.*, m.m_name, m.m_lastname, m.m_tel FROM request r JOIN member m ON r.m_id = m.m_id WHERE r.rq_status = 0 ORDER BY r.rq_date DESC";
+$sql_reqs = "SELECT r.*, m.m_name, m.m_lastname, m.m_tel, m.m_address FROM request r JOIN member m ON r.m_id = m.m_id WHERE r.rq_status = 0 ORDER BY r.rq_date DESC";
 $res_reqs = $conn->query($sql_reqs);
 ?>
 <!doctype html>
@@ -51,29 +64,9 @@ $res_reqs = $conn->query($sql_reqs);
     <title>จัดการคำขอรับผ้า - Laundry</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
-    <style>
-        :root { --primary: #2563EB; --secondary: #64748B; --bg: #F8FAFC; }
-        body { background: var(--bg); font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .sidebar { width: 260px; height: 100vh; background: #fff; position: fixed; border-right: 1px solid #E2E8F0; padding: 20px; }
-        .main-content { margin-left: 260px; padding: 30px; }
-        .nav-link { color: var(--secondary); padding: 12px 15px; border-radius: 8px; margin-bottom: 5px; }
-        .nav-link.active { background: #EFF6FF; color: var(--primary); font-weight: 600; }
-    </style>
 </head>
 <body>
-    <div class="sidebar">
-        <h4 class="fw-bold text-primary mb-4 px-3">🧺 Shop Admin</h4>
-        <nav class="nav flex-column">
-            <a class="nav-link" href="owner_home.php"><i class="fa fa-home me-2"></i> หน้าแรก</a>
-            <a class="nav-link active" href="manage_requests.php"><i class="fa fa-bell me-2"></i> คำขอรับผ้า</a>
-            <a class="nav-link" href="manage_orders.php"><i class="fa fa-file-invoice me-2"></i> รายการสั่งซื้อ</a>
-            <a class="nav-link" href="manage_services.php"><i class="fa fa-tags me-2"></i> จัดการบริการ</a>
-            <a class="nav-link" href="manage_members.php"><i class="fa fa-users me-2"></i> ข้อมูลลูกค้า</a>
-            <a class="nav-link" href="manage_shop.php"><i class="fa fa-cog me-2"></i> ตั้งค่าร้านค้า</a>
-            <hr>
-            <a class="nav-link text-danger" href="../logout.php"><i class="fa fa-sign-out-alt me-2"></i> ออกจากระบบ</a>
-        </nav>
-    </div>
+    <?php include 'sidebar.php'; ?>
 
     <div class="main-content">
         <h2 class="fw-bold mb-4">จัดการคำขอรับผ้า</h2>
@@ -88,7 +81,15 @@ $res_reqs = $conn->query($sql_reqs);
                             <span class="text-muted small"><?= $rq['rq_date'] ?></span>
                         </div>
                         <p class="mb-2"><i class="fa fa-phone me-2 text-primary"></i> <?= $rq['m_tel'] ?></p>
-                        <p class="mb-3"><i class="fa fa-map-marker-alt me-2 text-danger"></i> พิกัด: <?= $rq['rq_latitude'] ?>, <?= $rq['rq_longitude'] ?></p>
+                        <p class="mb-2"><i class="fa fa-home me-2 text-success"></i> <?= nl2br(htmlspecialchars($rq['m_address'])) ?></p>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <p class="mb-0"><i class="fa fa-map-marker-alt me-2 text-danger"></i> พิกัด: <?= $rq['rq_latitude'] ?>, <?= $rq['rq_longitude'] ?></p>
+                            <?php if($rq['rq_latitude'] && $rq['rq_longitude']): ?>
+                                <a href="https://www.google.com/maps?q=<?= $rq['rq_latitude'] ?>,<?= $rq['rq_longitude'] ?>" target="_blank" class="btn btn-sm btn-outline-danger rounded-pill px-3">
+                                    <i class="fa fa-map me-1"></i> เปิดแผนที่
+                                </a>
+                            <?php endif; ?>
+                        </div>
                         <div class="alert alert-secondary py-2 small mb-4">
                             <strong>หมายเหตุ:</strong> <?= htmlspecialchars($rq['rq_note'] ?: '-') ?>
                         </div>

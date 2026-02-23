@@ -10,6 +10,12 @@ if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'member') {
 $user = $_SESSION['user'];
 $m_id = $user['m_id'];
 
+// ดึงข้อมูลโควตารายเดือนจาก JSON
+$json_file = __DIR__ . '/../config/monthly_data.json';
+$monthly_data = file_exists($json_file) ? json_decode(file_get_contents($json_file), true) : [];
+$my_quota = isset($monthly_data[$m_id]) ? $monthly_data[$m_id]['quota'] : null;
+$my_pickups = isset($monthly_data[$m_id]['pickups_used']) ? $monthly_data[$m_id]['pickups_used'] : 0;
+
 // ดึงข้อมูลคำสั่งซื้อของสมาชิก
 $sql_orders = "SELECT * FROM orders WHERE m_id = '$m_id' ORDER BY order_date DESC";
 $res_orders = $conn->query($sql_orders);
@@ -53,7 +59,28 @@ $res_reqs = $conn->query($sql_reqs);
                     <img src="https://ui-avatars.com/api/?name=<?= urlencode($user['m_name']) ?>&background=3B82F6&color=fff" class="rounded-circle mx-auto mb-3" width="80">
                     <h5 class="fw-bold"><?= htmlspecialchars($user['m_name'] . ' ' . $user['m_lastname']) ?></h5>
                     <p class="text-muted small"><?= htmlspecialchars($user['m_mail']) ?></p>
+                    <a href="edit_profile.php" class="btn btn-sm btn-outline-secondary rounded-pill mb-3">
+                        <i class="fa fa-user-edit me-1"></i> แก้ไขโปรไฟล์
+                    </a>
                     <hr>
+                    <?php if($my_quota !== null): ?>
+                        <div class="alert alert-primary rounded-4 mb-3 p-3">
+                            <div class="mb-2">
+                                <p class="mb-0 small opacity-75">โควตาซักผ้าคงเหลือ</p>
+                                <h3 class="fw-bold mb-0"><?= $my_quota ?> <small class="fs-6">ชิ้น</small></h3>
+                            </div>
+                            <div class="border-top border-primary border-opacity-25 pt-2">
+                                <p class="mb-0 small opacity-75">สิทธิ์เรียกรับผ้าคงเหลือ</p>
+                                <h5 class="fw-bold mb-0"><?= max(0, 4 - $my_pickups) ?> <small class="fs-6 text-muted">/ 4 ครั้ง</small></h5>
+                                <p class="mb-0 smaller opacity-50" style="font-size: 0.75rem;">* ครั้งละไม่เกิน 20 ชิ้น</p>
+                                <hr class="my-2 border-primary border-opacity-25">
+                                <p class="mb-0 smaller fw-bold text-danger" style="font-size: 0.7rem;">* เมื่อครบ 30 วัน สิทธิคงเหลือจะถูกตัดจบทั้งหมด แม้ผ้ายังไม่ครบจำนวน</p>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                    <a href="monthly_plans.php" class="btn btn-outline-primary w-100 rounded-pill mb-3">
+                        <i class="fa fa-star me-2"></i> สมัคร/เติมรายเดือน
+                    </a>
                     <a href="request_pickup.php" class="btn btn-primary btn-lg w-100 rounded-3 mb-3">
                         <i class="fa fa-truck-pickup me-2"></i> แจ้งรับผ้า
                     </a>

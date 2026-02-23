@@ -39,6 +39,47 @@ if (isset($_POST['update_shop'])) {
     }
 }
 
+if (isset($_POST['clear_payments'])) {
+    // ลบข้อมูลทั้งหมดจากตาราง payment
+    if ($conn->query("DELETE FROM payment")) {
+        // แนะนำให้รีเซ็ต AUTO_INCREMENT ด้วยเพื่อให้ ID เริ่มต้นใหม่ที่ 1
+        $conn->query("ALTER TABLE payment AUTO_INCREMENT = 1");
+        $success = "ลบประวัติการชำระเงินทั้งหมดสำเร็จแล้ว!";
+    } else {
+        $error = "เกิดข้อผิดพลาดในการลบข้อมูล: " . $conn->error;
+    }
+}
+
+if (isset($_POST['clear_orders'])) {
+    if ($conn->query("DELETE FROM orders")) {
+        $success = "ลบรายการสั่งซื้อและประวัติที่เกี่ยวข้องทั้งหมดสำเร็จแล้ว!";
+    } else {
+        $error = "เกิดข้อผิดพลาด: " . $conn->error;
+    }
+}
+
+if (isset($_POST['clear_requests'])) {
+    if ($conn->query("DELETE FROM request")) {
+        $success = "ลบคำขอรับผ้าทั้งหมดสำเร็จแล้ว!";
+    } else {
+        $error = "เกิดข้อผิดพลาด: " . $conn->error;
+    }
+}
+
+if (isset($_POST['clear_monthly'])) {
+    $json_file = __DIR__ . '/../config/monthly_data.json';
+    if (file_exists($json_file)) {
+        // เขียนไฟล์ว่างเปล่าทับลงไป
+        if (file_put_contents($json_file, json_encode([], JSON_PRETTY_PRINT))) {
+            $success = "ล้างข้อมูลโควตารายเดือนของลูกค้าทุกคนเรียบร้อยแล้ว!";
+        } else {
+            $error = "ไม่สามารถเข้าถึงไฟล์ข้อมูลได้";
+        }
+    } else {
+        $success = "ไม่มีข้อมูลโควตาในระบบอยู่แล้ว";
+    }
+}
+
 $shop = $conn->query("SELECT * FROM shop WHERE shop_id = '$shop_id'")->fetch_assoc();
 ?>
 <!doctype html>
@@ -49,27 +90,9 @@ $shop = $conn->query("SELECT * FROM shop WHERE shop_id = '$shop_id'")->fetch_ass
     <title>ตั้งค่าร้านค้า - Laundry</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
-    <style>
-        :root { --primary: #2563EB; --bg: #F8FAFC; }
-        body { background: var(--bg); font-family: 'Segoe UI', sans-serif; }
-        .sidebar { width: 260px; height: 100vh; background: #fff; position: fixed; border-right: 1px solid #E2E8F0; padding: 20px; }
-        .main-content { margin-left: 260px; padding: 30px; }
-        .nav-link { color: #64748B; padding: 12px 15px; border-radius: 8px; margin-bottom: 5px; }
-        .nav-link.active { background: #EFF6FF; color: var(--primary); font-weight: 600; }
-    </style>
 </head>
 <body>
-    <div class="sidebar">
-        <h4 class="fw-bold text-primary mb-4 px-3">🧺 Shop Admin</h4>
-        <nav class="nav flex-column">
-            <a class="nav-link" href="owner_home.php"><i class="fa fa-home me-2"></i> หน้าแรก</a>
-            <a class="nav-link" href="manage_requests.php"><i class="fa fa-bell me-2"></i> คำขอรับผ้า</a>
-            <a class="nav-link" href="manage_orders.php"><i class="fa fa-file-invoice me-2"></i> รายการสั่งซื้อ</a>
-            <a class="nav-link" href="manage_services.php"><i class="fa fa-tags me-2"></i> จัดการบริการ</a>
-            <a class="nav-link" href="manage_members.php"><i class="fa fa-users me-2"></i> ข้อมูลลูกค้า</a>
-            <a class="nav-link active" href="manage_shop.php"><i class="fa fa-cog me-2"></i> ตั้งค่าร้านค้า</a>
-        </nav>
-    </div>
+    <?php include 'sidebar.php'; ?>
 
     <div class="main-content">
         <h2 class="fw-bold mb-4">ตั้งค่าร้านค้า</h2>
@@ -121,6 +144,61 @@ $shop = $conn->query("SELECT * FROM shop WHERE shop_id = '$shop_id'")->fetch_ass
                     </button>
                 </div>
             </form>
+        </div>
+
+        <!-- Danger Zone -->
+        <div class="card border-0 shadow-sm rounded-4 p-4 mt-4 border-top border-danger border-5">
+            <h5 class="fw-bold text-danger mb-3"><i class="fa fa-exclamation-triangle me-2"></i> พื้นที่อันตราย (Danger Zone)</h5>
+            <p class="text-muted small">การดำเนินการนี้จะไม่สามารถย้อนกลับได้ กรุณาตรวจสอบให้แน่ใจก่อนกดปุ่ม</p>
+            <hr>
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="fw-bold mb-1">ลบประวัติการชำระเงินทั้งหมด</h6>
+                    <p class="text-muted small mb-0">ลบข้อมูลการชำระเงินและรูปภาพสลิปทั้งหมดออกจากระบบ</p>
+                </div>
+                <form method="post" onsubmit="return confirm('คุณแน่ใจหรือไม่ที่จะลบประวัติการชำระเงินทั้งหมด?')">
+                    <button type="submit" name="clear_payments" class="btn btn-outline-danger rounded-pill px-4">
+                        ลบประวัติชำระเงิน
+                    </button>
+                </form>
+            </div>
+            <hr>
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="fw-bold mb-1">ลบรายการสั่งซื้อทั้งหมด</h6>
+                    <p class="text-muted small mb-0">ลบออเดอร์, รายการผ้า, สลิป และข้อมูลการจัดส่งทั้งหมด (Reset ระบบใหม่)</p>
+                </div>
+                <form method="post" onsubmit="return confirm('อันตราย! คุณแน่ใจหรือไม่ที่จะลบรายการสั่งซื้อทั้งหมด? ข้อมูลนี้จะไม่สามารถกู้คืนได้!')">
+                    <button type="submit" name="clear_orders" class="btn btn-outline-danger rounded-pill px-4">
+                        ลบออเดอร์ทั้งหมด
+                    </button>
+                </form>
+            </div>
+            <hr>
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="fw-bold mb-1">ลบคำขอรับผ้าทั้งหมด</h6>
+                    <p class="text-muted small mb-0">ลบรายการแจ้งให้ไปรับผ้าที่ค้างอยู่และที่ดำเนินการแล้วทั้งหมด</p>
+                </div>
+                <form method="post" onsubmit="return confirm('คุณแน่ใจหรือไม่ที่จะลบคำขอรับผ้าทั้งหมด?')">
+                    <button type="submit" name="clear_requests" class="btn btn-outline-danger rounded-pill px-4">
+                        ลบคำขอทั้งหมด
+                    </button>
+                </form>
+            </div>
+            <hr>
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="fw-bold mb-1">ล้างโควตารายเดือนทั้งหมด</h6>
+                    <p class="text-muted small mb-0">ลบจำนวนชิ้นคงเหลือของลูกค้ารายเดือนทุกคนให้กลายเป็น 0 (ล้างไฟล์ JSON)</p>
+                    <p class="text-danger smaller mb-0" style="font-size: 0.75rem;">* ใช้สำหรับตัดจบโควตาเมื่อครบกำหนด 30 วันตามนโยบายร้าน</p>
+                </div>
+                <form method="post" onsubmit="return confirm('อันตราย! คุณแน่ใจหรือไม่ที่จะลบโควตารายเดือนของลูกค้าทุกคน? ยอดคงเหลือจะหายไปทั้งหมด!')">
+                    <button type="submit" name="clear_monthly" class="btn btn-outline-danger rounded-pill px-4">
+                        ล้างโควตาทั้งหมด
+                    </button>
+                </form>
+            </div>
         </div>
     </div>
 </body>

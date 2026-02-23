@@ -9,10 +9,19 @@ if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'owner') {
 
 $order_id = $conn->real_escape_string($_GET['id']);
 
-// ดึงข้อมูลออเดอร์
-$sql_order = "SELECT o.*, m.m_name, m.m_lastname, m.m_tel FROM orders o JOIN member m ON o.m_id = m.m_id WHERE o.order_id = '$order_id'";
+// ดึงข้อมูลออเดอร์ (เพิ่มพิกัดจาก Member และ Request)
+$sql_order = "SELECT o.*, m.m_name, m.m_lastname, m.m_tel, m.m_address, m.m_latitude AS m_lat, m.m_longitude AS m_lng, 
+              r.rq_latitude AS r_lat, r.rq_longitude AS r_lng 
+              FROM orders o 
+              JOIN member m ON o.m_id = m.m_id 
+              LEFT JOIN request r ON o.rq_id = r.rq_id
+              WHERE o.order_id = '$order_id'";
 $res_order = $conn->query($sql_order);
 $order = $res_order->fetch_assoc();
+
+// กำหนดพิกัดที่จะใช้ (ใช้จาก Request ก่อน ถ้าไม่มีให้ใช้จาก Member)
+$lat = $order['r_lat'] ?: $order['m_lat'];
+$lng = $order['r_lng'] ?: $order['m_lng'];
 
 // จัดการการเพิ่มรายการบริการ
 if (isset($_POST['add_item'])) {
@@ -54,12 +63,21 @@ $res_items = $conn->query($sql_items);
 // ดึงบริการที่มีให้เลือก
 $res_services = $conn->query("SELECT * FROM service");
 
-// ดึงข้อมูลการชำระเงิน (ถ้ามี)
-$sql_payment = "SELECT * FROM payment WHERE order_id = '$order_id' ORDER BY payment_id DESC LIMIT 1";
-$res_payment = $conn->query($sql_payment);
-$payment = $res_payment->fetch_assoc();
-?>
-<!doctype html>
+    // ดึงข้อมูลการชำระเงิน (ถ้ามี)
+    $sql_payment = "SELECT * FROM payment WHERE order_id = '$order_id' ORDER BY payment_id DESC LIMIT 1";
+    $res_payment = $conn->query($sql_payment);
+    $payment = $res_payment->fetch_assoc();
+
+    // ดึงโควตาคงเหลือ
+    $json_file = __DIR__ . '/../config/monthly_data.json';
+    $monthly_data = file_exists($json_file) ? json_decode(file_get_contents($json_file), true) : [];
+    $is_monthly = isset($monthly_data[$order['m_id']]);
+    
+    // คำนวณจำนวนชิ้นในออเดอร์ปัจจุบัน
+    $current_pieces = 0;
+    $res_count = $conn->query("SELECT SUM(item_amount) as total FROM item WHERE order_id = '$order_id'");
+    if($res_count) $current_pieces = (int)$res_count->fetch_assoc()['total'];
+?><!doctype html>
 <html lang="th">
 <head>
     <meta charset="utf-8">
@@ -82,7 +100,15 @@ $payment = $res_payment->fetch_assoc();
                         <div class="col-md-6">
                             <p class="mb-1 text-muted small">ลูกค้า:</p>
                             <h5 class="fw-bold mb-0"><?= $order['m_name'] . ' ' . $order['m_lastname'] ?></h5>
-                            <p class="text-primary"><?= $order['m_tel'] ?></p>
+                            <div class="d-flex align-items-center gap-2 mt-1">
+                                <p class="text-primary mb-0 me-3"><?= $order['m_tel'] ?></p>
+                                <?php if($lat && $lng): ?>
+                                    <a href="https://www.google.com/maps?q=<?= $lat ?>,<?= $lng ?>" target="_blank" class="btn btn-sm btn-outline-danger rounded-pill px-3 py-1">
+                                        <i class="fa fa-map-marker-alt me-1"></i> เปิดแผนที่
+                                    </a>
+                                <?php endif; ?>
+                            </div>
+                            <p class="mt-2 mb-0 small text-muted"><i class="fa fa-home me-1"></i> <?= nl2br(htmlspecialchars($order['m_address'])) ?></p>
                         </div>
                         <div class="col-md-6 text-md-end">
                             <p class="mb-1 text-muted small">วันที่สั่งซื้อ:</p>
@@ -93,6 +119,15 @@ $payment = $res_payment->fetch_assoc();
                     <hr>
 
                     <h5 class="fw-bold mb-3">📋 รายการบริการในออเดอร์นี้</h5>
+                    
+                    <?php if($is_monthly): ?>
+                        <div class="alert <?= $current_pieces > 20 ? 'alert-danger' : 'alert-warning' ?> py-2 small rounded-pill mb-3">
+                            <i class="fa fa-info-circle me-1"></i> ลูกค้ารายเดือน: 
+                            <strong>บันทึกไปแล้ว <?= $current_pieces ?> / 20 ชิ้น</strong>
+                            <?php if($current_pieces > 20): ?> (เกินโควตาต่อครั้ง!) <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
+
                     <div class="table-responsive mb-4">
                         <table class="table table-hover">
                             <thead class="table-light"><tr><th>บริการ</th><th>จำนวน</th><th>ราคา/หน่วย</th><th>รวม</th></tr></thead>
@@ -116,7 +151,7 @@ $payment = $res_payment->fetch_assoc();
                     <?php if($order['order_status'] == 1): ?>
                         <div class="p-3 bg-white border rounded-4 mb-4">
                             <h6 class="fw-bold mb-3"><i class="fa fa-plus-circle me-2 text-success"></i> เพิ่มรายการบริการ</h6>
-                            <form method="post" class="row g-2">
+                            <form method="post" class="row g-2 mb-3">
                                 <div class="col-md-6">
                                     <select name="service_id" class="form-select rounded-pill" required>
                                         <option value="">เลือกประเภทบริการ...</option>
@@ -131,6 +166,16 @@ $payment = $res_payment->fetch_assoc();
                                 <div class="col-md-3">
                                     <button type="submit" name="add_item" class="btn btn-success w-100 rounded-pill">เพิ่ม</button>
                                 </div>
+                            </form>
+
+                            <!-- หักโควตารายเดือน -->
+                            <hr>
+                            <form method="post" action="deduct_monthly.php">
+                                <input type="hidden" name="order_id" value="<?= $order_id ?>">
+                                <input type="hidden" name="m_id" value="<?= $order['m_id'] ?>">
+                                <button type="submit" name="use_quota" class="btn btn-outline-warning w-100 rounded-pill" onclick="return confirm('ยืนยันการหักโควตารายเดือน?')">
+                                    <i class="fa fa-star me-2"></i> หักโควตารายเดือน (แทนเงินสด)
+                                </button>
                             </form>
                         </div>
 

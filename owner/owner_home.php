@@ -31,33 +31,9 @@ $res_orders = $conn->query($sql_orders);
     <title>แดชบอร์ดเจ้าของร้าน - Laundry</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
-    <style>
-        :root { --primary: #2563EB; --secondary: #64748B; --bg: #F8FAFC; }
-        body { background: var(--bg); font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .sidebar { width: 260px; height: 100vh; background: #fff; position: fixed; border-right: 1px solid #E2E8F0; padding: 20px; }
-        .main-content { margin-left: 260px; padding: 30px; }
-        .card-stat { border: none; border-radius: 12px; transition: transform 0.2s; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
-        .card-stat:hover { transform: translateY(-5px); }
-        .nav-link { color: var(--secondary); padding: 12px 15px; border-radius: 8px; margin-bottom: 5px; }
-        .nav-link.active { background: #EFF6FF; color: var(--primary); font-weight: 600; }
-        .nav-link:hover:not(.active) { background: #F1F5F9; }
-    </style>
 </head>
 <body>
-    <div class="sidebar">
-        <h4 class="fw-bold text-primary mb-4 px-3">🧺 Shop Admin</h4>
-        <nav class="nav flex-column">
-            <a class="nav-link active" href="owner_home.php"><i class="fa fa-home me-2"></i> หน้าแรก</a>
-            <a class="nav-link" href="manage_requests.php"><i class="fa fa-bell me-2"></i> คำขอรับผ้า (<?= $count_pending ?>)</a>
-            <a class="nav-link" href="manage_orders.php"><i class="fa fa-file-invoice me-2"></i> รายการสั่งซื้อ</a>
-            <a class="nav-link" href="reports.php"><i class="fa fa-chart-bar me-2"></i> รายงาน</a>
-            <a class="nav-link" href="manage_services.php"><i class="fa fa-tags me-2"></i> จัดการบริการ</a>
-            <a class="nav-link" href="manage_members.php"><i class="fa fa-users me-2"></i> ข้อมูลลูกค้า</a>
-            <a class="nav-link" href="manage_shop.php"><i class="fa fa-cog me-2"></i> ตั้งค่าร้านค้า</a>
-            <hr>
-            <a class="nav-link text-danger" href="../logout.php"><i class="fa fa-sign-out-alt me-2"></i> ออกจากระบบ</a>
-        </nav>
-    </div>
+    <?php include 'sidebar.php'; ?>
 
     <div class="main-content">
         <div class="d-flex justify-content-between align-items-center mb-4">
@@ -155,7 +131,7 @@ $res_orders = $conn->query($sql_orders);
                                 <p class="mb-0 fw-bold small"><?= $rq['m_name'] . ' ' . $rq['m_lastname'] ?></p>
                                 <p class="mb-0 text-muted smaller" style="font-size: 0.75rem;"><?= $rq['rq_date'] ?></p>
                             </div>
-                            <a href="view_request.php?id=<?= $rq['rq_id'] ?>" class="btn btn-primary btn-sm rounded-pill">จัดการ</a>
+                            <a href="manage_requests.php" class="btn btn-primary btn-sm rounded-pill">จัดการ</a>
                         </div>
                         <?php endwhile; ?>
                     <?php else: ?>
