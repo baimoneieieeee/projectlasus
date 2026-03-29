@@ -7,139 +7,123 @@ if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'owner') {
     exit;
 }
 
-$shop = $_SESSION['user'];
+// ดึงข้อมูลสรุป
+$today = date('Y-m-d');
+$new_requests = $conn->query("SELECT COUNT(*) FROM request WHERE rq_status = 0")->fetch_row()[0];
+$active_orders = $conn->query("SELECT COUNT(*) FROM orders WHERE order_status IN (0, 1, 2)")->fetch_row()[0];
+$today_income = $conn->query("SELECT SUM(order_sum + order_shipping_fee) FROM orders WHERE DATE(order_date) = '$today' AND order_status >= 3")->fetch_row()[0] ?? 0;
 
-// ดึงสถิติต่างๆ
-$count_pending = $conn->query("SELECT COUNT(*) FROM request WHERE rq_status = 0")->fetch_row()[0];
-$count_washing = $conn->query("SELECT COUNT(*) FROM orders WHERE order_status = 1")->fetch_row()[0];
-$count_payment = $conn->query("SELECT COUNT(*) FROM orders WHERE order_status = 2")->fetch_row()[0];
-$count_total_order = $conn->query("SELECT COUNT(*) FROM orders")->fetch_row()[0];
-
-// ดึงคำขอรับผ้าที่รอดำเนินการ
-$sql_reqs = "SELECT r.*, m.m_name, m.m_lastname FROM request r JOIN member m ON r.m_id = m.m_id WHERE r.rq_status = 0 ORDER BY r.rq_date DESC";
-$res_reqs = $conn->query($sql_reqs);
-
-// ดึงรายการสั่งซื้อล่าสุด
-$sql_orders = "SELECT o.*, m.m_name, m.m_lastname FROM orders o JOIN member m ON o.m_id = m.m_id ORDER BY o.order_date DESC LIMIT 5";
-$res_orders = $conn->query($sql_orders);
+// ออเดอร์ล่าสุด
+$res_latest = $conn->query("SELECT o.*, m.m_name FROM orders o JOIN member m ON o.m_id = m.m_id ORDER BY o.order_date DESC LIMIT 5");
 ?>
 <!doctype html>
 <html lang="th">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>แดชบอร์ดเจ้าของร้าน - Laundry</title>
+    <title>หน้าแรกผู้ดูแลระบบ - Laundry Admin</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <style>
+        .stat-card { 
+            border: none; border-radius: 20px; padding: 25px; 
+            transition: 0.3s; background: white; 
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+        }
+        .stat-card:hover { transform: translateY(-5px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+        .icon-circle { 
+            width: 55px; height: 55px; border-radius: 15px; 
+            display: flex; align-items: center; justify-content: center; 
+            font-size: 1.5rem; margin-bottom: 15px;
+        }
+        .table-custom { background: white; border-radius: 20px; overflow: hidden; border: none; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+    </style>
 </head>
 <body>
     <?php include 'sidebar.php'; ?>
 
     <div class="main-content">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2 class="fw-bold">ภาพรวมระบบ</h2>
-            <span class="text-muted"><?= date("d/m/Y") ?></span>
-        </div>
-
-        <div class="row g-3 mb-4">
-            <div class="col-md-3">
-                <div class="card card-stat p-3 bg-white">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <p class="text-muted small mb-1">คำขอใหม่</p>
-                            <h3 class="fw-bold mb-0"><?= $count_pending ?></h3>
-                        </div>
-                        <div class="bg-warning bg-opacity-10 p-2 rounded text-warning"><i class="fa fa-bell"></i></div>
-                    </div>
+        <h2 class="fw-bold mb-4">ยินดีต้อนรับกลับมา 👋</h2>
+        
+        <div class="row g-4 mb-5">
+            <!-- ยอดขายวันนี้ -->
+            <div class="col-md-4">
+                <div class="stat-card">
+                    <div class="icon-circle bg-primary bg-opacity-10 text-primary"><i class="fa fa-coins"></i></div>
+                    <p class="text-muted small mb-1">รายได้วันนี้</p>
+                    <h2 class="fw-bold mb-0 text-primary">฿<?= number_format($today_income, 2) ?></h2>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card card-stat p-3 bg-white">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <p class="text-muted small mb-1">กำลังดำเนินการ</p>
-                            <h3 class="fw-bold mb-0"><?= $count_washing ?></h3>
-                        </div>
-                        <div class="bg-primary bg-opacity-10 p-2 rounded text-primary"><i class="fa fa-spinner fa-spin"></i></div>
-                    </div>
+            <!-- คำขอใหม่ -->
+            <div class="col-md-4">
+                <div class="stat-card">
+                    <div class="icon-circle bg-danger bg-opacity-10 text-danger"><i class="fa fa-bell"></i></div>
+                    <p class="text-muted small mb-1">คำขอรับผ้าใหม่</p>
+                    <h2 class="fw-bold mb-0 text-danger"><?= $new_requests ?> <small class="fs-6 text-muted">รายการ</small></h2>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card card-stat p-3 bg-white">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <p class="text-muted small mb-1">รอจ่ายเงิน</p>
-                            <h3 class="fw-bold mb-0"><?= $count_payment ?></h3>
-                        </div>
-                        <div class="bg-info bg-opacity-10 p-2 rounded text-info"><i class="fa fa-hand-holding-usd"></i></div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card card-stat p-3 bg-white">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <p class="text-muted small mb-1">รวมทั้งหมด</p>
-                            <h3 class="fw-bold mb-0"><?= $count_total_order ?></h3>
-                        </div>
-                        <div class="bg-success bg-opacity-10 p-2 rounded text-success"><i class="fa fa-check-circle"></i></div>
-                    </div>
+            <!-- งานที่กำลังทำ -->
+            <div class="col-md-4">
+                <div class="stat-card">
+                    <div class="icon-circle bg-warning bg-opacity-10 text-warning"><i class="fa fa-clock"></i></div>
+                    <p class="text-muted small mb-1">งานที่กำลังดำเนินการ</p>
+                    <h2 class="fw-bold mb-0 text-warning"><?= $active_orders ?> <small class="fs-6 text-muted">ออเดอร์</small></h2>
                 </div>
             </div>
         </div>
 
         <div class="row g-4">
-            <div class="col-lg-7">
-                <div class="card border-0 shadow-sm rounded-4 p-4 mb-4">
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h5 class="fw-bold mb-0">📦 รายการสั่งซื้อล่าสุด</h5>
-                        <a href="manage_orders.php" class="small text-decoration-none">ดูทั้งหมด</a>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle">
-                            <thead class="table-light"><tr><th>ID</th><th>ลูกค้า</th><th>สถานะ</th><th>ยอดรวม</th></tr></thead>
-                            <tbody>
-                                <?php while($o = $res_orders->fetch_assoc()): ?>
-                                <tr>
-                                    <td class="small fw-bold"><?= $o['order_id'] ?></td>
-                                    <td class="small"><?= $o['m_name'] ?></td>
-                                    <td>
-                                        <?php 
-                                        $status = ['รอดำเนินการ', 'กำลังซัก/อบ/รีด', 'รอจ่ายเงิน', 'จ่ายเงินแล้ว', 'จัดส่งคืนแล้ว'];
-                                        $colors = ['bg-secondary', 'bg-info', 'bg-warning text-dark', 'bg-primary', 'bg-success'];
-                                        echo "<span class='badge {$colors[$o['order_status']]} small'>{$status[$o['order_status']]}</span>";
-                                        ?>
-                                    </td>
-                                    <td class="small fw-bold">฿<?= number_format($o['order_sum'], 2) ?></td>
-                                </tr>
-                                <?php endwhile; ?>
-                            </tbody>
-                        </table>
-                    </div>
+            <div class="col-lg-8">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="fw-bold mb-0">รายการสั่งซื้อล่าสุด</h5>
+                    <a href="manage_orders.php" class="btn btn-sm btn-outline-primary rounded-pill px-3">ดูทั้งหมด</a>
+                </div>
+                <div class="table-custom p-3">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="text-muted small">
+                            <tr><th>เลขที่ออเดอร์</th><th>ลูกค้า</th><th>ยอดรวม</th><th>สถานะ</th></tr>
+                        </thead>
+                        <tbody>
+                            <?php while($row = $res_latest->fetch_assoc()): ?>
+                            <tr onclick="location.href='order_process.php?id=<?= $row['order_id'] ?>'" style="cursor:pointer">
+                                <td class="fw-bold"><?= $row['order_id'] ?></td>
+                                <td><?= htmlspecialchars($row['m_name']) ?></td>
+                                <td class="fw-bold">฿<?= number_format($row['order_sum'] + $row['order_shipping_fee'], 2) ?></td>
+                                <td>
+                                    <?php 
+                                    $s_text = ['รอดำเนินการ', 'ซัก/รีด', 'รอจ่ายเงิน', 'จ่ายแล้ว', 'สำเร็จ'];
+                                    $s_color = ['bg-secondary', 'bg-info', 'bg-warning text-dark', 'bg-primary', 'bg-success'];
+                                    echo "<span class='badge {$s_color[$row['order_status']]} rounded-pill px-3'>{$s_text[$row['order_status']]}</span>";
+                                    ?>
+                                </td>
+                            </tr>
+                            <?php endwhile; ?>
+                        </tbody>
+                    </table>
                 </div>
             </div>
-            <div class="col-lg-5">
-                <div class="card border-0 shadow-sm rounded-4 p-4 mb-4">
-                    <h5 class="fw-bold mb-3">🔔 คำขอรับผ้า (รอยืนยัน)</h5>
-                    <?php if($res_reqs->num_rows > 0): ?>
-                        <?php while($rq = $res_reqs->fetch_assoc()): ?>
-                        <div class="d-flex align-items-center mb-3 p-2 bg-light rounded-3">
-                            <div class="me-3">
-                                <div class="bg-white p-2 rounded shadow-sm text-primary"><i class="fa fa-truck-pickup"></i></div>
-                            </div>
-                            <div class="flex-grow-1">
-                                <p class="mb-0 fw-bold small"><?= $rq['m_name'] . ' ' . $rq['m_lastname'] ?></p>
-                                <p class="mb-0 text-muted smaller" style="font-size: 0.75rem;"><?= $rq['rq_date'] ?></p>
-                            </div>
-                            <a href="manage_requests.php" class="btn btn-primary btn-sm rounded-pill">จัดการ</a>
+            <div class="col-lg-4">
+                <h5 class="fw-bold mb-3">ทางลัดด่วน</h5>
+                <div class="d-grid gap-2">
+                    <a href="manage_requests.php" class="btn btn-white bg-white border-0 shadow-sm p-3 text-start rounded-4 d-flex align-items-center">
+                        <div class="icon-circle bg-danger bg-opacity-10 text-danger mb-0 me-3" style="width:40px; height:40px; font-size:1rem"><i class="fa fa-plus"></i></div>
+                        <div>
+                            <div class="fw-bold small">ดูคำขอรับผ้า</div>
+                            <div class="text-muted smaller">มีงานใหม่รอคุณอยู่</div>
                         </div>
-                        <?php endwhile; ?>
-                    <?php else: ?>
-                        <p class="text-muted text-center py-4">ไม่มีคำขอใหม่</p>
-                    <?php endif; ?>
+                    </a>
+                    <a href="manage_services.php" class="btn btn-white bg-white border-0 shadow-sm p-3 text-start rounded-4 d-flex align-items-center">
+                        <div class="icon-circle bg-primary bg-opacity-10 text-primary mb-0 me-3" style="width:40px; height:40px; font-size:1rem"><i class="fa fa-tags"></i></div>
+                        <div>
+                            <div class="fw-bold small">จัดการราคา/บริการ</div>
+                            <div class="text-muted smaller">ปรับปรุงเมนูผ้าและราคา</div>
+                        </div>
+                    </a>
                 </div>
             </div>
         </div>
     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

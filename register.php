@@ -11,8 +11,8 @@ if (isset($_POST['register'])) {
     $lastname = $conn->real_escape_string($_POST['lastname']);
     $email = $conn->real_escape_string($_POST['email']);
     $pass = $conn->real_escape_string($_POST['password']);
-    $tel = $conn->real_escape_string($_POST['tel']);
-    $address = $conn->real_escape_string($_POST['address']);
+    $tel = isset($_POST['tel']) ? $conn->real_escape_string($_POST['tel']) : "";
+    $address = ""; // จะไปกรอกทีหลังหลังล็อคอิน
 
     // ตรวจสอบอีเมลซ้ำ
     $check = $conn->query("SELECT m_id FROM member WHERE m_mail = '$email'");
@@ -99,10 +99,6 @@ if (isset($_POST['register'])) {
                 <label class="form-label">เบอร์โทรศัพท์</label>
                 <input type="text" name="tel" class="form-control" maxlength="10">
             </div>
-            <!-- <div class="mb-3">
-                <label class="form-label">ที่อยู่</label>
-                <textarea name="address" class="form-control" rows="2"></textarea>
-            </div> -->
             <button type="submit" name="register" class="btn btn-primary w-100">สมัครสมาชิก</button>
             <div class="text-center mt-3">
                 <a href="index.php" class="text-decoration-none">มีบัญชีอยู่แล้ว? เข้าสู่ระบบ</a>

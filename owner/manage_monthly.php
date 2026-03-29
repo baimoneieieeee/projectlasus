@@ -7,97 +7,250 @@ if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'owner') {
     exit;
 }
 
+// อ่านข้อมูลโควตาจาก JSON
 $json_file = __DIR__ . '/../config/monthly_data.json';
-
-// อ่านข้อมูลจาก JSON (ถ้าไม่มีให้สร้างใหม่)
 $monthly_data = file_exists($json_file) ? json_decode(file_get_contents($json_file), true) : [];
 
-if (isset($_POST['add_quota'])) {
-    $m_id = $_POST['m_id'];
-    $quota = (int)$_POST['quota'];
-    $pickups = (int)$_POST['pickups_used']; // รับค่าจำนวนครั้งที่รับผ้ามาด้วย
-    
-    if (!isset($monthly_data[$m_id])) {
-        $monthly_data[$m_id] = ['quota' => 0, 'pickups_used' => 0, 'updated_at' => ''];
-    }
-    
-    $monthly_data[$m_id]['quota'] += $quota;
-    $monthly_data[$m_id]['pickups_used'] = $pickups; // อัปเดตจำนวนครั้งตามที่กรอก
-    $monthly_data[$m_id]['updated_at'] = date("Y-m-d H:i:s");
-    
-    file_put_contents($json_file, json_encode($monthly_data, JSON_PRETTY_PRINT));
-    $success = "อัปเดตข้อมูลโควตาและจำนวนครั้งเรียบร้อยแล้ว";
-}
+// --- 🚩 เพิ่มการดึงข้อมูลคนสมัคร PKG แต่ยังไม่กดยืนยัน ---
+$sql_pending_pkg = "SELECT o.*, m.m_name, m.m_lastname, m.m_tel 
+                    FROM orders o 
+                    JOIN member m ON o.m_id = m.m_id 
+                    WHERE o.order_id LIKE 'PKG%' AND o.order_status <= 1 
+                    ORDER BY o.order_date DESC";
+$res_pending = $conn->query($sql_pending_pkg);
 
-$res_members = $conn->query("SELECT * FROM member");
+// ดึงข้อมูลสมาชิกรายเดือน (Active)
+$active_ids = array_keys($monthly_data);
+if (!empty($active_ids)) {
+    $ids_str = "'" . implode("','", $active_ids) . "'";
+    $res = $conn->query("SELECT * FROM member WHERE m_id IN ($ids_str) ORDER BY m_name ASC");
+} else {
+    $res = null;
+}
 ?>
 <!doctype html>
 <html lang="th">
 <head>
     <meta charset="utf-8">
-    <title>จัดการลูกค้ารายเดือน - Laundry</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>จัดการสมาชิกรรายเดือน - Laundry</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600;700&display=swap');
+        :root { --primary: #2563eb; --bg: #f8fafc; }
+        body { background: var(--bg); font-family: 'Chakra Petch', sans-serif; }
+        .main-content { margin-left: 280px; padding: 40px; }
+        .card-custom { border: none; border-radius: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); background: white; }
+        .quota-badge { font-size: 1.1rem; font-weight: 700; color: #2563eb; }
+        @media (max-width: 991px) { .main-content { margin-left: 0; padding: 20px; } }
+    </style>
 </head>
-<body class="bg-light">
+<body>
     <?php include 'sidebar.php'; ?>
-    <div class="main-content">
-        <div class="card border-0 shadow-sm rounded-4 p-4">
-            <h4 class="fw-bold mb-4">🌟 จัดการโควตารายเดือน (Prepaid)</h4>
-            
-            <div class="alert alert-info border-0 shadow-sm rounded-4 mb-4">
-                <i class="fa fa-info-circle me-2"></i>
-                <strong>นโยบายแพ็กเกจ:</strong> เมื่อครบกำหนด 1 เดือน (30 วัน) สิทธิโควตาซักผ้าและสิทธิเรียกรับผ้าที่คงเหลือจะถูกตัดจบทั้งหมด แม้ลูกค้าจะยังใช้ไม่ครบจำนวน
-            </div>
 
-            <?php if(isset($success)): ?>
-                <div class="alert alert-success"><?= $success ?></div>
+    <div class="main-content">
+        <div class="container-fluid">
+            <!-- 🚩 ส่วนสมาชิกใหม่ที่รอเปิดสิทธิ์ (ถ้ามี) -->
+            <?php if($res_pending && $res_pending->num_rows > 0): ?>
+            <div class="mb-5">
+                <h5 class="fw-bold text-danger mb-3 small uppercase"><i class="fa fa-clock me-2"></i> รอเปิดสิทธิ์สมาชิกใหม่ (ค้างจ่าย/รอตรวจสลิป)</h5>
+                <div class="card card-custom p-4 border-start border-danger border-4">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr class="smaller">
+                                    <th>เลขออเดอร์</th>
+                                    <th>ชื่อลูกค้า</th>
+                                    <th>แพ็กเกจ</th>
+                                    <th class="text-end">ยอดเงิน</th>
+                                    <th class="text-center">จัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php while($p = $res_pending->fetch_assoc()): ?>
+                                <tr>
+                                    <td class="fw-bold text-danger small"><?= $p['order_id'] ?></td>
+                                    <td>
+                                        <div class="fw-bold small"><?= htmlspecialchars($p['m_name'].' '.$p['m_lastname']) ?></div>
+                                        <div class="smaller text-muted"><i class="fa fa-phone me-1 small"></i> <?= $p['m_tel'] ?></div>
+                                    </td>
+                                    <td>
+                                        <div class="small fw-bold text-dark">
+                                            <?php 
+                                            // ดึงชื่อแพ็กเกจจาก note
+                                            preg_match('/MONTHLY_PACKAGE_(\d+)/', $p['order_note'], $matches);
+                                            echo "เหมาซัก " . ($matches[1] ?? '80') . " ชิ้น";
+                                            ?>
+                                        </div>
+                                        <div class="smaller text-muted"><?= date('d/m/y H:i', strtotime($p['order_date'])) ?></div>
+                                    </td>
+                                    <td class="text-end fw-bold text-dark small">฿<?= number_format($p['order_sum'], 2) ?></td>
+                                    <td class="text-center">
+                                        <a href="order_process.php?id=<?= $p['order_id'] ?>" class="btn btn-sm btn-danger rounded-pill px-3 shadow-sm">
+                                            <i class="fa fa-wallet me-1"></i> จัดการสลิป
+                                        </a>
+                                    </td>
+                                </tr>
+                                <?php endwhile; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
             <?php endif; ?>
 
-            <form method="post" class="row g-3 mb-5 border-bottom pb-4">
-                <div class="col-md-5">
-                    <label class="form-label small fw-bold">เลือกลูกค้า</label>
-                    <select name="m_id" class="form-select rounded-pill" required>
-                        <?php while($m = $res_members->fetch_assoc()): ?>
-                            <option value="<?= $m['m_id'] ?>"><?= $m['m_name'] ?> (<?= $m['m_id'] ?>)</option>
-                        <?php endwhile; ?>
-                    </select>
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h5 class="fw-bold mb-0 text-dark small uppercase"><i class="fa fa-check-circle me-2 text-success"></i> สมาชิกรรายเดือน (กำลังใช้งาน)</h5>
                 </div>
-                <div class="col-md-3">
-                    <label class="form-label small fw-bold">เติมจำนวนชิ้น (+)</label>
-                    <input type="number" name="quota" class="form-control rounded-pill" placeholder="0" value="0" required>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label small fw-bold">จำนวนครั้งที่รับผ้าแล้ว (0-4)</label>
-                    <input type="number" name="pickups_used" class="form-control rounded-pill" placeholder="0" value="0" min="0" max="10" required>
-                </div>
-                <div class="col-md-1 d-flex align-items-end">
-                    <button type="submit" name="add_quota" class="btn btn-primary w-100 rounded-pill">บันทึก</button>
-                </div>
-            </form>
-
-            <h5 class="fw-bold">รายชื่อลูกค้าที่มีโควตาคงเหลือ</h5>
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead><tr><th>ID ลูกค้า</th><th>โควตาคงเหลือ</th><th>ใช้สิทธิ์รับผ้าไปแล้ว</th><th>อัปเดตล่าสุด</th></tr></thead>
-                    <tbody>
-                        <?php foreach($monthly_data as $mid => $data): ?>
-                        <tr>
-                            <td><?= $mid ?></td>
-                            <td class="fw-bold text-success"><?= $data['quota'] ?> ชิ้น</td>
-                            <td class="fw-bold <?= $data['pickups_used'] >= 4 ? 'text-danger' : 'text-primary' ?>">
-                                <?= $data['pickups_used'] ?> / 4 ครั้ง
-                            </td>
-                            <td class="small text-muted"><?= $data['updated_at'] ?></td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+                <a href="quick_order.php" class="btn btn-primary rounded-pill px-4 shadow-sm fw-bold">
+                    <i class="fa fa-plus-circle me-2"></i> เปิดบิลซักสมาชิก
+                </a>
             </div>
-            <div class="mt-3">
-                <a href="owner_home.php" class="btn btn-light rounded-pill">กลับหน้าแรก</a>
+
+            <div class="card card-custom p-4">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-4">ชื่อสมาชิก</th>
+                                <th class="text-center">โควตาผ้าที่เหลือ</th>
+                                <th class="text-center">รอบรับส่ง (ครั้งนี้)</th>
+                                <th>อัปเดตล่าสุด</th>
+                                <th class="text-center">จัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if($res && $res->num_rows > 0): ?>
+                                <?php while($m = $res->fetch_assoc()): 
+                                    $data = $monthly_data[$m['m_id']];
+                                ?>
+                                <tr>
+                                    <td class="ps-4">
+                                        <div class="fw-bold text-dark"><?= htmlspecialchars($m['m_name'].' '.$m['m_lastname']) ?></div>
+                                        <div class="small text-muted"><i class="fa fa-phone me-1 small"></i> <?= $m['m_tel'] ?></div>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="quota-badge"><?= $data['quota'] ?></span>
+                                        <div class="smaller text-muted" style="font-size: 0.7rem;">จากโควตาสมัคร</div>
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="badge bg-light text-dark border rounded-pill px-3">
+                                            <?= $data['pickups_used'] ?? 0 ?> / 4 ครั้ง
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="small text-muted"><?= date('d/m/y H:i', strtotime($data['updated_at'])) ?></div>
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="d-flex gap-2 justify-content-center">
+                                            <button type="button" class="btn btn-sm btn-primary rounded-pill px-3 shadow-sm" 
+                                                    onclick="openDeductModal('<?= $m['m_id'] ?>', '<?= htmlspecialchars($m['m_name'].' '.$m['m_lastname']) ?>', <?= $data['quota'] ?>)">
+                                                <i class="fa fa-cut me-1"></i> หักผ้า
+                                            </button>
+                                            <a href="manage_orders.php?m_id=<?= $m['m_id'] ?>" class="btn btn-sm btn-outline-secondary rounded-pill px-3" title="ประวัติการซัก">
+                                                <i class="fa fa-history me-1"></i> ประวัติ
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <?php endwhile; ?>
+                            <?php else: ?>
+                                <tr>
+                                    <td colspan="5" class="text-center py-5 text-muted opacity-50">
+                                        <i class="fa fa-user-slash fa-3x mb-3"></i>
+                                        <p>ยังไม่มีสมาชิกรายเดือนในขณะนี้</p>
+                                    </td>
+                                </tr>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- สถิติย่อ -->
+            <div class="row mt-4">
+                <div class="col-md-4">
+                    <div class="card card-custom p-3 bg-primary bg-opacity-10 border-0">
+                        <div class="small fw-bold text-primary mb-1">จำนวนสมาชิกทั้งหมด</div>
+                        <h4 class="fw-bold mb-0 text-primary"><?= $res ? $res->num_rows : 0 ?> คน</h4>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
+    <!-- 🟢 Modal หักผ้าด่วน -->
+    <div class="modal fade" id="deductModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg" style="border-radius: 25px;">
+                <div class="modal-header border-0 pb-0">
+                    <h5 class="fw-bold"><i class="fa fa-cut text-primary me-2"></i>หักโควตาผ้าสมาชิก</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body py-4">
+                    <div class="text-center mb-4">
+                        <div class="text-muted small">ชื่อสมาชิก</div>
+                        <div class="fw-bold fs-5 text-dark" id="modal_m_name">-</div>
+                        <div class="badge bg-primary bg-opacity-10 text-primary mt-1">โควตาปัจจุบัน: <span id="modal_m_quota">0</span> ชิ้น</div>
+                    </div>
+                    <form id="deductForm">
+                        <input type="hidden" name="m_id" id="modal_m_id">
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-secondary">จำนวนผ้าที่ซักครั้งนี้ (ชิ้น)</label>
+                            <input type="number" name="amount" id="deduct_amount" class="form-control form-control-lg text-center fw-bold border-0 bg-light" style="border-radius: 15px;" min="0" value="1" required>
+                        </div>
+                        <hr class="my-4 opacity-50">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label small fw-bold text-danger">เรียกเก็บเงินเพิ่ม (บาท)</label>
+                                <input type="number" name="extra_cash" class="form-control border-0 bg-danger bg-opacity-10 text-danger fw-bold" style="border-radius: 12px;" value="0" min="0">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-bold text-secondary">เหตุผลที่เก็บเพิ่ม</label>
+                                <input type="text" name="extra_note" class="form-control border-0 bg-light" style="border-radius: 12px;" placeholder="เช่น ค่าผ้านวม">
+                            </div>
+                        </div>
+                        <div class="form-text smaller text-muted mt-2 mb-4 text-center">หากกรอกเงินเพิ่ม ระบบจะแจ้งให้ลูกค้าโอนเงินส่วนต่างก่อนเริ่มซัก</div>
+                        
+                        <button type="submit" class="btn btn-primary w-100 py-3 rounded-pill fw-bold shadow">
+                            <i class="fa fa-check-circle me-2"></i> ยืนยันรายการ
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const deductModal = new bootstrap.Modal(document.getElementById('deductModal'));
+        
+        function openDeductModal(id, name, quota) {
+            document.getElementById('modal_m_id').value = id;
+            document.getElementById('modal_m_name').innerText = name;
+            document.getElementById('modal_m_quota').innerText = quota;
+            document.getElementById('deduct_amount').max = quota;
+            deductModal.show();
+        }
+
+        document.getElementById('deductForm').onsubmit = function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            
+            fetch('process_quick_deduct.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.text())
+            .then(data => {
+                if(data.trim() === 'success') {
+                    location.reload(); 
+                } else {
+                    alert('เกิดข้อผิดพลาด: ' + data);
+                }
+            });
+        };
+    </script>
 </body>
 </html>

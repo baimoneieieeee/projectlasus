@@ -8,31 +8,54 @@ if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'owner') {
 }
 
 if (isset($_POST['use_quota'])) {
-    $order_id = $_POST['order_id'];
-    $m_id = $_POST['m_id'];
+    $order_id = $conn->real_escape_string($_POST['order_id']);
+    $m_id = $conn->real_escape_string($_POST['m_id']);
     
-    // คำนวณจำนวนชิ้นทั้งหมดในออเดอร์นี้
-    $sql_items = "SELECT SUM(item_amount) as total FROM item WHERE order_id = '$order_id'";
-    $res = $conn->query($sql_items);
-    $total_items = (int)$res->fetch_assoc()['total'];
-
-    // อ่านข้อมูล JSON
-    $json_file = __DIR__ . '/../config/monthly_data.json';
-    $monthly_data = file_exists($json_file) ? json_decode(file_get_contents($json_file), true) : [];
-
-    if (isset($monthly_data[$m_id]) && $monthly_data[$m_id]['quota'] >= $total_items) {
-        // หักโควตา
-        $monthly_data[$m_id]['quota'] -= $total_items;
-        $monthly_data[$m_id]['updated_at'] = date("Y-m-d H:i:s");
-        file_put_contents($json_file, json_encode($monthly_data, JSON_PRETTY_PRINT));
-
-        // อัปเดตสถานะออเดอร์เป็น "จ่ายเงินแล้ว" และยอดเป็น 0
-        $conn->query("UPDATE orders SET order_status = 3, order_sum = 0, order_note = 'จ่ายด้วยโควตารายเดือน ($total_items ชิ้น)' WHERE order_id = '$order_id'");
+    if (isset($_POST['manual_mode'])) {
+        $quota_deduct = (int)$_POST['quota_deduct'];
+        $extra_cash = (float)$_POST['extra_cash'];
+        $extra_note = $conn->real_escape_string($_POST['extra_note'] ?? '');
+        $summary_note = $conn->real_escape_string($_POST['summary_note']);
         
-        header("Location: order_process.php?id=$order_id");
-        exit;
-    } else {
-        echo "<script>alert('โควตาไม่เพียงพอ! (ต้องการ $total_items ชิ้น)'); window.history.back();</script>";
+        // --- 🚩 คำนวณยอดเงินรวมใหม่ ---
+        // 1. ดึงข้อมูลออเดอร์ปัจจุบัน
+        $order = $conn->query("SELECT order_shipping_fee, order_id FROM orders WHERE order_id = '$order_id'")->fetch_assoc();
+        
+        // 2. ถ้าเป็นบิล PKG ต้องเอาราคาแพ็กเกจมาตั้งต้นด้วย
+        $base_price = 0;
+        if(strpos($order_id, 'PKG') === 0) {
+            // ค้นหาราคาจากโน้ตเดิม (เช่น ราคา 500 บาท)
+            $old_order = $conn->query("SELECT order_note FROM orders WHERE order_id = '$order_id'")->fetch_assoc();
+            preg_match('/ราคา (\d+) บาท/', $old_order['order_note'], $matches);
+            $base_price = isset($matches[1]) ? (float)$matches[1] : 0;
+        }
+
+        // 3. ยอดรวมใหม่ = ราคาตั้งต้น + ค่าส่ง + ยอดบวกเพิ่มใหม่
+        $new_total_sum = $base_price + (float)$order['order_shipping_fee'] + $extra_cash;
+        
+        $note_appendix = ($quota_deduct > 0) ? " (เตรียมหักโควตา $quota_deduct ชิ้น)" : "";
+        
+        // สรุปหมายเหตุ: ถ้าเป็น PKG ให้คงบรรทัดแรกที่เป็นชื่อแพ็กเกจไว้
+        $final_note = $summary_note . $note_appendix;
+        if($base_price > 0) {
+             // สำหรับ PKG ให้ต่อท้ายโน้ตเดิมบรรทัดแรก
+             $lines = explode("\n", $old_order['order_note']);
+             $final_note = $lines[0] . "\n" . $summary_note . $note_appendix;
+        }
+
+        $sql = "UPDATE orders SET 
+                order_status = 1, 
+                order_sum = $new_total_sum, 
+                order_items_count = $quota_deduct, 
+                order_note = '$final_note',
+                order_extra_note = '$extra_note',
+                order_extra_cash = $extra_cash
+                WHERE order_id = '$order_id'";
+        
+        if ($conn->query($sql)) {
+            header("Location: order_process.php?id=$order_id");
+            exit;
+        }
     }
 }
 ?>
