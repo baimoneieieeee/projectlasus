@@ -178,6 +178,7 @@ if (!empty($active_ids)) {
                     </div>
                 </div>
             </div>
+       
         </div>
     </div>
     <!-- 🟢 Modal หักผ้าด่วน -->
@@ -196,9 +197,27 @@ if (!empty($active_ids)) {
                     </div>
                     <form id="deductForm">
                         <input type="hidden" name="m_id" id="modal_m_id">
+                        
+                        <!-- 🧺 รายการผ้าแยกย่อย -->
                         <div class="mb-3">
-                            <label class="form-label small fw-bold text-secondary">จำนวนผ้าที่ซักครั้งนี้ (ชิ้น)</label>
-                            <input type="number" name="amount" id="deduct_amount" class="form-control form-control-lg text-center fw-bold border-0 bg-light" style="border-radius: 15px;" min="0" value="1" required>
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <label class="form-label small fw-bold text-primary mb-0"><i class="fa fa-list me-1"></i> รายการผ้าที่ส่ง</label>
+                                <button type="button" class="btn btn-sm btn-outline-primary rounded-pill border-0" onclick="addItemRow()">
+                                    <i class="fa fa-plus-circle me-1"></i> เพิ่มรายการ
+                                </button>
+                            </div>
+                            <div id="item_list_container" class="bg-light p-2 rounded-4 border border-light">
+                                <div class="row g-2 mb-2 item-row">
+                                    <div class="col-7"><input type="text" name="item_names[]" class="form-control form-control-sm border-0 rounded-3" placeholder="เช่น เสื้อยืด"></div>
+                                    <div class="col-3"><input type="number" name="item_qtys[]" class="form-control form-control-sm border-0 rounded-3 text-center item-qty" value="1" min="1" onchange="calcTotal()"></div>
+                                    <div class="col-2"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-secondary">จำนวนผ้าที่ซักรวม (ชิ้น)</label>
+                            <input type="number" name="amount" id="deduct_amount" class="form-control form-control-lg text-center fw-bold border-0 bg-light" style="border-radius: 15px;" min="1" value="1" readonly required>
                         </div>
                         <hr class="my-4 opacity-50">
                         <div class="row g-2">
@@ -226,11 +245,41 @@ if (!empty($active_ids)) {
     <script>
         const deductModal = new bootstrap.Modal(document.getElementById('deductModal'));
         
+        function addItemRow() {
+            const container = document.getElementById('item_list_container');
+            const row = document.createElement('div');
+            row.className = 'row g-2 mb-2 item-row';
+            row.innerHTML = `
+                <div class="col-7"><input type="text" name="item_names[]" class="form-control form-control-sm border-0 rounded-3" placeholder="รายการผ้า"></div>
+                <div class="col-3"><input type="number" name="item_qtys[]" class="form-control form-control-sm border-0 rounded-3 text-center item-qty" value="1" min="1" onchange="calcTotal()"></div>
+                <div class="col-2"><button type="button" class="btn btn-sm text-danger border-0" onclick="this.closest('.item-row').remove(); calcTotal();"><i class="fa fa-times"></i></button></div>
+            `;
+            container.appendChild(row);
+            calcTotal();
+        }
+
+        function calcTotal() {
+            let total = 0;
+            document.querySelectorAll('.item-qty').forEach(input => {
+                total += parseInt(input.value) || 0;
+            });
+            document.getElementById('deduct_amount').value = total;
+        }
+
         function openDeductModal(id, name, quota) {
             document.getElementById('modal_m_id').value = id;
             document.getElementById('modal_m_name').innerText = name;
             document.getElementById('modal_m_quota').innerText = quota;
             document.getElementById('deduct_amount').max = quota;
+            // รีเซ็ตรายการผ้าให้เหลือแถวเดียว
+            document.getElementById('item_list_container').innerHTML = `
+                <div class="row g-2 mb-2 item-row">
+                    <div class="col-7"><input type="text" name="item_names[]" class="form-control form-control-sm border-0 rounded-3" placeholder="เช่น เสื้อยืด"></div>
+                    <div class="col-3"><input type="number" name="item_qtys[]" class="form-control form-control-sm border-0 rounded-3 text-center item-qty" value="1" min="1" onchange="calcTotal()"></div>
+                    <div class="col-2"></div>
+                </div>
+            `;
+            calcTotal();
             deductModal.show();
         }
 

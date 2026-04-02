@@ -72,9 +72,7 @@ if ($order) {
                             $monthly_data[$m_id]['updated_at'] = date("Y-m-d H:i:s");
                             file_put_contents($json_file, json_encode($monthly_data, JSON_PRETTY_PRINT));
                         } else {
-                            // ถ้าครบ 4 ครั้งแล้ว แต่ยังมีผ้ามาซัก (และโควตายังเหลือ) 
-                            // ให้ถือเป็น "รายครั้ง" หรือ "หักโควตาพิเศษ" โดยไม่นับรอบเพิ่ม (Round=0)
-                            // หรือเจ้าของร้านต้องบังคับให้ลูกค้าต่อแพ็กเกจใหม่ก่อน
+                            // ถ้าครบ 4 ครั้งแล้ว แต่ยังมีผ้ามาซัก ให้ถือเป็นรอบพิเศษ (0)
                             $conn->query("UPDATE orders SET order_pickup_round = 0 WHERE order_id = '$order_id'");
                         }
                     } else {

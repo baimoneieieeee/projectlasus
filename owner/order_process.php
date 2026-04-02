@@ -78,7 +78,16 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
                     $s_color = [0=>'bg-dark', 1=>'bg-warning text-dark', 2=>'bg-info text-white', 3=>'bg-primary text-white', 4=>'bg-success text-white'];
                     $st = (int)$order['order_status'];
                     ?>
-                    <span class="status-badge <?= $s_color[$st] ?>"><?= $s_text[$st] ?></span>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="status-badge <?= $s_color[$st] ?>"><?= $s_text[$st] ?></span>
+                        <?php if($is_monthly): 
+                            $pickups = $monthly_data[$order['m_id']]['pickups_used'] ?? 0;
+                        ?>
+                            <span class="badge bg-light text-primary border border-primary border-opacity-25 rounded-pill px-3 py-2 fw-bold">
+                                <i class="fa fa-sync-alt me-1"></i> รอบรับ-ส่งสะสม: <?= $pickups ?> / 4 ครั้ง
+                            </span>
+                        <?php endif; ?>
+                    </div>
                 </div>
                 <a href="manage_orders.php" class="btn btn-outline-secondary rounded-pill px-4 shadow-sm fw-bold">
                     <i class="fa fa-arrow-left me-2"></i> กลับหน้ารวม
@@ -101,6 +110,11 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
                         <?php if($is_monthly): ?>
                             <div class="p-2 bg-primary bg-opacity-10 text-primary rounded-3 text-center mb-3">
                                 <i class="fa fa-gem me-1"></i> <small class="fw-bold">สมาชิกรรายเดือน (โควตาเหลือ <?= $member_quota ?>)</small>
+                            </div>
+                            <div class="mb-3">
+                                <a href="manage_monthly.php" class="btn btn-primary w-100 rounded-pill fw-bold shadow-sm">
+                                    <i class="fa fa-cut me-2"></i> ไปหน้าหักผ้าสมาชิก
+                                </a>
                             </div>
                         <?php endif; ?>
                         
@@ -194,17 +208,47 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
                                 <input type="hidden" name="manual_mode" value="1">
 
                                 <div class="row g-4">
+                                    <div class="col-md-12">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <label class="form-label fw-bold small text-primary mb-0"><i class="fa fa-list me-1"></i> รายการผ้าที่ได้รับมาจริง</label>
+                                            <button type="button" class="btn btn-sm btn-outline-primary rounded-pill border-0" onclick="addItemRow()">
+                                                <i class="fa fa-plus-circle me-1"></i> เพิ่มรายการ
+                                            </button>
+                                        </div>
+                                        <div id="item_list_container" class="bg-white p-3 rounded-4 border shadow-sm mb-3">
+                                            <div class="row g-2 mb-2 item-row">
+                                                <div class="col-8"><input type="text" name="item_names[]" class="form-control rounded-3" placeholder="เช่น เสื้อยืด"></div>
+                                                <div class="col-3"><input type="number" name="item_qtys[]" class="form-control rounded-3 text-center item-qty" value="1" min="1" onchange="calcTotal()"></div>
+                                                <div class="col-1"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     <?php 
                                     $is_pkg_order = (strpos(trim($order['order_id']), 'PKG') === 0);
                                     if($is_monthly || $is_pkg_order): 
                                     ?>
                                     <div class="col-md-4">
                                         <label class="form-label fw-bold small text-secondary">จำนวนผ้าปกติที่หักโควตา (ชิ้น)</label>
-                                        <input type="number" name="quota_deduct" class="form-control form-control-lg rounded-3 border-0 shadow-sm" value="<?= $order['order_items_count'] ?>" min="0" required>
-                                        <div class="form-text smaller text-primary">ใส่จำนวนที่ส่งซักเพื่อคำนวณหักโควตา</div>
+                                        <input type="number" name="quota_deduct" id="deduct_amount" class="form-control form-control-lg rounded-3 border-0 shadow-sm bg-light fw-bold text-center" value="<?= $order['order_items_count'] ?: 1 ?>" min="0" readonly required>
+                                        <div class="form-text smaller text-primary">คำนวณอัตโนมัติจากรายการด้านบน</div>
                                     </div>
                                     <?php else: ?>
-                                        <input type="hidden" name="quota_deduct" value="0">
+                                        <div class="col-md-4">
+                                            <label class="form-label fw-bold small text-secondary">ค่าบริการซักรีดหลัก (บาท)</label>
+                                            <?php 
+                                            // พยายามหาค่าบริการหลักเดิม (order_sum - extra - shipping)
+                                            $current_base = (float)$order['order_sum'] - (float)$order['order_extra_cash'] - (float)$order['order_shipping_fee'];
+                                            if($current_base <= 0) {
+                                                // ถ้าเป็น 0 ให้ลองดึงจาก request (ยอดที่ลูกค้าเห็นตอนกด)
+                                                $rq_info = $conn->query("SELECT rq_sum FROM request WHERE rq_id = '{$order['rq_id']}'")->fetch_assoc();
+                                                $current_base = (float)($rq_info['rq_sum'] ?? 0);
+                                            }
+                                            ?>
+                                            <input type="number" step="0.01" name="service_price" class="form-control form-control-lg rounded-3 border-0 shadow-sm text-primary fw-bold" value="<?= $current_base ?>" min="0" required>
+                                            <div class="form-text smaller text-primary">ยอดเงินค่าซักรีดหลัก</div>
+                                        </div>
+                                        <input type="hidden" name="quota_deduct" id="deduct_amount" value="0">
                                     <?php endif; ?>
 
                                     <div class="col-md-<?= $is_monthly ? '3' : '4' ?>">
@@ -241,6 +285,47 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
                                             echo nl2br(htmlspecialchars($clean_note)); 
                                             ?>
                                         </div>
+
+                                        <!-- 🧺 แสดงตารางรายการผ้าแยกย่อย (ถ้ามี) -->
+                                        <?php 
+                                        $items_res = $conn->query("SELECT * FROM item WHERE order_id = '$order_id'");
+                                        if($items_res && $items_res->num_rows > 0):
+                                        ?>
+                                        <div class="mt-3 table-responsive">
+                                            <table class="table table-sm table-borderless bg-white rounded-3 shadow-sm mb-0">
+                                                <thead class="smaller text-muted"><tr><th class="ps-3">รายการผ้า</th><th class="text-center">จำนวน (ชิ้น)</th></tr></thead>
+                                                <tbody class="small">
+                                                    <?php while($it = $items_res->fetch_assoc()): 
+                                                        // ถ้าเป็นรายการมาตรฐาน (SRV...) ให้พยายามหาชื่อจากข้อความสรุป หรือใช้ชื่อบริการ
+                                                        $it_name = "รายการทั่วไป";
+                                                        // พยายามดึงชื่อจาก order_note ที่เราเซฟไว้ในรูปแบบ "ชื่อ (จำนวน)"
+                                                        preg_match_all('/([^,\[\]]+)\s\((\d+)\)/', $order['order_note'], $matches);
+                                                        if(!empty($matches[1])) {
+                                                            // จับคู่ลำดับรายการ (คร่าวๆ)
+                                                            // เพื่อความแม่นยำที่สุด ในอนาคตอาจต้องเพิ่มคอลัมน์ item_name ในตาราง item
+                                                            // แต่ตอนนี้จะแสดงผลรวมจาก Note ให้เห็นชัดเจนครับ
+                                                        }
+                                                    ?>
+                                                    <?php endwhile; ?>
+                                                    <?php 
+                                                    // แสดงผลจากสิ่งที่ดึงได้ใน Note ให้เป็นตาราง
+                                                    preg_match_all('/([^,\[\]:]+)\s\((\d+)\)/', $order['order_note'], $matches);
+                                                    if(!empty($matches[1])):
+                                                        foreach($matches[1] as $idx => $m_name):
+                                                    ?>
+                                                        <tr class="border-top border-light">
+                                                            <td class="ps-3 fw-bold text-secondary"><?= trim($m_name) ?></td>
+                                                            <td class="text-center fw-bold text-primary"><?= $matches[2][$idx] ?></td>
+                                                        </tr>
+                                                    <?php 
+                                                        endforeach;
+                                                    endif; 
+                                                    ?>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <?php endif; ?>
+
                                         <?php if($order['order_items_count'] > 0): ?>
                                             <div class="badge bg-primary bg-opacity-10 text-primary mt-2">
                                                 <i class="fa fa-cut me-1"></i> หักโควตาทันที: <?= $order['order_items_count'] ?> ชิ้น
@@ -298,5 +383,28 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function addItemRow() {
+            const container = document.getElementById('item_list_container');
+            const row = document.createElement('div');
+            row.className = 'row g-2 mb-2 item-row';
+            row.innerHTML = `
+                <div class="col-8"><input type="text" name="item_names[]" class="form-control rounded-3" placeholder="รายการผ้า"></div>
+                <div class="col-3"><input type="number" name="item_qtys[]" class="form-control rounded-3 text-center item-qty" value="1" min="1" onchange="calcTotal()"></div>
+                <div class="col-1"><button type="button" class="btn btn-sm text-danger border-0 mt-1" onclick="this.closest('.item-row').remove(); calcTotal();"><i class="fa fa-times"></i></button></div>
+            `;
+            container.appendChild(row);
+            calcTotal();
+        }
+
+        function calcTotal() {
+            let total = 0;
+            document.querySelectorAll('.item-qty').forEach(input => {
+                total += parseInt(input.value) || 0;
+            });
+            const amountInput = document.getElementById('deduct_amount');
+            if (amountInput) amountInput.value = total;
+        }
+    </script>
 </body>
 </html>

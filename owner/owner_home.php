@@ -11,7 +11,7 @@ if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'owner') {
 $today = date('Y-m-d');
 $new_requests = $conn->query("SELECT COUNT(*) FROM request WHERE rq_status = 0")->fetch_row()[0];
 $active_orders = $conn->query("SELECT COUNT(*) FROM orders WHERE order_status IN (0, 1, 2)")->fetch_row()[0];
-$today_income = $conn->query("SELECT SUM(order_sum + order_shipping_fee) FROM orders WHERE DATE(order_date) = '$today' AND order_status >= 3")->fetch_row()[0] ?? 0;
+$today_income = $conn->query("SELECT SUM(IFNULL(order_sum, 0) + IFNULL(order_shipping_fee, 0)) FROM orders WHERE DATE(order_date) = '$today' AND order_status >= 3")->fetch_row()[0] ?? 0;
 
 // ออเดอร์ล่าสุด
 $res_latest = $conn->query("SELECT o.*, m.m_name FROM orders o JOIN member m ON o.m_id = m.m_id ORDER BY o.order_date DESC LIMIT 5");

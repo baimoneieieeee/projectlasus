@@ -83,7 +83,7 @@ $default_lng = $shop['shop_longitude'] ?: 100.5018;
                     <!-- นโยบายค่าส่งแบบย่อ -->
                     <div class="col-12">
                         <div class="p-4 bg-white border rounded-4 shadow-sm">
-                            <h6 class="fw-bold mb-3 text-primary"><i class="fa fa-truck me-2"></i>นโยบายค่าจัดส่ง (3 ช่วง)</h6>
+                            <h6 class="fw-bold mb-3 text-primary"><i class="fa fa-truck me-2"></i>นโยบายค่าจัดส่ง (2 ช่วง)</h6>
                             <div class="table-responsive">
                                 <table class="table table-borderless align-middle mb-0 text-center">
                                     <thead class="text-muted small"><tr><th>ระดับระยะทาง</th><th>ระยะทางสูงสุด (กม.)</th><th>ค่าบริการ (บาท)</th></tr></thead>
@@ -94,15 +94,14 @@ $default_lng = $shop['shop_longitude'] ?: 100.5018;
                                             <td class="text-success fw-bold">ฟรี</td>
                                         </tr>
                                         <tr class="border-top">
-                                            <td class="fw-bold text-primary">ระยะกลาง (ราคามาตรฐาน)</td>
-                                            <td>ถัดไป ถึง <input type="number" name="dist2" class="fee-input" value="<?= $shop['shop_dist_2'] ?>"></td>
+                                            <td class="fw-bold text-primary">ระยะปกติ (ราคามาตรฐาน)</td>
+                                            <td>เกิน <span class="fw-bold text-primary"><?= $shop['shop_dist_1'] ?></span> กม. ขึ้นไป</td>
                                             <td><input type="number" name="rate" class="fee-input text-primary" value="<?= $shop['shop_rate'] ?>"></td>
                                         </tr>
-                                        <tr class="border-top">
-                                            <td class="fw-bold text-danger">ระยะไกล (ราคาตามตกลง)</td>
-                                            <td>เกิน <span class="fw-bold text-danger"><?= $shop['shop_dist_2'] ?></span> กม. ขึ้นไป</td>
-                                            <td><input type="number" name="rate_far" class="fee-input text-danger" value="<?= $shop['shop_rate_far'] ?>"></td>
-                                        </tr>
+                                        <!-- Hidden inputs for legacy variables to avoid DB errors or breaking code -->
+                                        <input type="hidden" name="dist2" value="<?= $shop['shop_dist_2'] ?>">
+                                        <input type="
+                                        hidden" name="rate_far" value="<?= $shop['shop_rate_far'] ?>">
 
                                     </tbody>
                                 </table>

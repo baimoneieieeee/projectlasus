@@ -53,13 +53,9 @@ $normal_orders = [];
 
 while($o = $res_orders->fetch_assoc()) {
     $is_pkg = (strpos($o['order_id'], 'PKG') === 0);
-    $note = $o['order_note'] ?: '';
     
-    // ตรวจสอบว่าในโน้ตมีการระบุว่า "หักโควตา" หรือไม่
-    $has_quota_deduct = (strpos($note, 'หักโควตา') !== false);
-
-    // รายเดือน: เป็น PKG หรือ มีเลขรอบสมาชิก หรือ มีการหักโควตาในโน้ต
-    if($is_pkg || (int)$o['order_pickup_round'] > 0 || $has_quota_deduct) {
+    // รายเดือน: เป็น PKG หรือ มีเลขรอบสมาชิกที่มากกว่า 0
+    if($is_pkg || (int)$o['order_pickup_round'] > 0) {
         $monthly_orders[] = $o;
     } else {
         $normal_orders[] = $o;
@@ -151,10 +147,10 @@ $s_color = [0=>'bg-secondary', 1=>'bg-warning text-dark', 2=>'bg-info', 3=>'bg-p
 
                     <div class="d-grid gap-2">
                         <a href="monthly_plans.php" class="btn btn-outline-primary btn-action mb-2">
-                            <i class="fa fa-gem me-2"></i> สมัคร/เติมแพ็กเกจ
+                            <i class="fa fa-gem me-2"></i> รายเดือน
                         </a>
                         <a href="request_pickup.php" class="btn btn-primary btn-action py-3 shadow-sm text-white">
-                            <i class="fa fa-truck-pickup me-2"></i> แจ้งให้ร้านมารับผ้า
+                            <i class="fa fa-truck-pickup me-2"></i> รายชิ้น
                         </a>
                     </div>
 

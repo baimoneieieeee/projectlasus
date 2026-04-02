@@ -77,12 +77,13 @@ $res = $conn->query("SELECT * FROM member $where ORDER BY m_id DESC");
     <?php include 'sidebar.php'; ?>
 
     <div class="main-content">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2 class="fw-bold mb-0">จัดการลูกค้า</h2>
-            <button class="btn btn-primary rounded-pill px-4" data-bs-toggle="modal" data-bs-target="#addModal">
-                <i class="fa fa-user-plus me-2"></i> เพิ่มลูกค้าใหม่
-            </button>
-        </div>
+        <div class="container-fluid">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2 class="fw-bold mb-0">จัดการลูกค้า</h2>
+                <button class="btn btn-primary rounded-pill px-4" data-bs-toggle="modal" data-bs-target="#addModal">
+                    <i class="fa fa-user-plus me-2"></i> เพิ่มลูกค้าใหม่
+                </button>
+            </div>
 
         <?php if(isset($_GET['success'])): ?>
             <div class="alert alert-success alert-dismissible fade show rounded-4 border-0 mb-4 shadow-sm" role="alert">
@@ -106,7 +107,7 @@ $res = $conn->query("SELECT * FROM member $where ORDER BY m_id DESC");
             <div class="table-responsive">
                 <table class="table table-hover align-middle">
                     <thead class="table-light text-muted small">
-                        <tr><th>ชื่อ-นามสกุล</th><th>การติดต่อ</th><th>สถานะสมาชิก</th><th>ตำแหน่ง</th><th class="text-center">จัดการ</th></tr>
+                        <tr><th>ชื่อ-นามสกุล</th><th>การติดต่อ</th><th>สถานะสมาชิก</th><th>สมัครเมื่อ</th><th>จัดการ</th></tr>
                     </thead>
                     <tbody>
                         <?php 
@@ -138,14 +139,12 @@ $res = $conn->query("SELECT * FROM member $where ORDER BY m_id DESC");
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <?php if($row['m_latitude']): ?>
-                                    <a href="https://www.google.com/maps?q=<?= $row['m_latitude'] ?>,<?= $row['m_longitude'] ?>" target="_blank" class="btn btn-sm btn-outline-info rounded-pill px-2">แผนที่</a>
-                                <?php else: ?>
-                                    <span class="text-muted smaller">ยังไม่ปักหมุด</span>
-                                <?php endif; ?>
+                                <div class="small fw-bold text-dark"><?= date('d/m/Y', strtotime($row['m_created_at'] ?: 'now')) ?></div>
+                                <div class="smaller text-muted" style="font-size: 0.7rem;"><?= date('H:i', strtotime($row['m_created_at'] ?: 'now')) ?> น.</div>
                             </td>
                             <td class="text-center">
                                 <div class="btn-group">
+                                    <button class="btn btn-sm btn-outline-info" onclick="viewHistory('<?= $m_id ?>', '<?= htmlspecialchars($row['m_name'].' '.$row['m_lastname']) ?>')" title="ดูประวัติการซัก"><i class="fa fa-list"></i></button>
                                     <button class="btn btn-sm btn-outline-primary" onclick="editMember(<?= htmlspecialchars(json_encode($row)) ?>)" data-bs-toggle="modal" data-bs-target="#editModal"><i class="fa fa-edit"></i></button>
                                     <a href="manage_orders.php?m_id=<?= $row['m_id'] ?>" class="btn btn-sm btn-outline-success"><i class="fa fa-receipt"></i></a>
                                     <a href="?delete=<?= $row['m_id'] ?>" class="btn btn-sm btn-outline-danger" onclick="return confirm('ยืนยันการลบ?')"><i class="fa fa-trash"></i></a>
@@ -200,8 +199,68 @@ $res = $conn->query("SELECT * FROM member $where ORDER BY m_id DESC");
         </div>
     </div>
 
+    <!-- Modal ประวัติการซัก -->
+    <div class="modal fade" id="historyModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0 rounded-4 shadow">
+                <div class="modal-header border-0 bg-light rounded-top-4">
+                    <h5 class="modal-title fw-bold"><i class="fa fa-history me-2 text-primary"></i>ประวัติการซัก: <span id="hist_m_name"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <div class="table-responsive" style="max-height: 400px;">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="bg-white sticky-top shadow-sm small fw-bold">
+                                <tr><th class="ps-4">วันที่</th><th>เลขออเดอร์</th><th>สถานะ</th><th>ยอดรวม</th><th>บันทึก</th></tr>
+                            </thead>
+                            <tbody id="history_body">
+                                <!-- Data will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 small text-muted">แสดงประวัติออเดอร์ทั้งหมดของลูกค้า</div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        const histModal = new bootstrap.Modal(document.getElementById('historyModal'));
+
+        function viewHistory(m_id, name) {
+            document.getElementById('hist_m_name').innerText = name;
+            document.getElementById('history_body').innerHTML = '<tr><td colspan="5" class="text-center py-5"><div class="spinner-border text-primary"></div></td></tr>';
+            histModal.show();
+
+            fetch('get_member_history.php?m_id=' + m_id)
+                .then(res => res.json())
+                .then(data => {
+                    let html = '';
+                    if(data.length === 0) {
+                        html = '<tr><td colspan="5" class="text-center py-5 text-muted">ยังไม่มีประวัติการสั่งซื้อ</td></tr>';
+                    } else {
+                        data.forEach(ord => {
+                            let s_text = ['รอรับผ้า','รอชำระ','กำลังซัก','เตรียมส่ง','สำเร็จ'][ord.order_status] || 'ไม่ระบุ';
+                            let s_color = ['dark','warning','info','primary','success'][ord.order_status] || 'secondary';
+                            html += `
+                                <tr>
+                                    <td class="ps-4 small">
+                                        <div class="fw-bold text-dark">${ord.date_fmt}</div>
+                                        <div class="smaller text-muted">${ord.time_fmt} น.</div>
+                                    </td>
+                                    <td class="small fw-bold text-primary">${ord.order_id}</td>
+                                    <td><span class="badge bg-${s_color} bg-opacity-10 text-${s_color} border border-${s_color} border-opacity-25 rounded-pill small">${s_text}</span></td>
+                                    <td class="fw-bold text-dark">฿${parseFloat(ord.order_sum).toLocaleString()}</td>
+                                    <td class="small text-muted" style="max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${ord.order_note}">${ord.order_note || '-'}</td>
+                                </tr>
+                            `;
+                        });
+                    }
+                    document.getElementById('history_body').innerHTML = html;
+                });
+        }
+
         function editMember(data) {
             document.getElementById('edit_id').value = data.m_id;
             document.getElementById('edit_name').value = data.m_name;

@@ -85,25 +85,18 @@ $default_lng = (float)($user['m_longitude'] && $user['m_longitude'] != 0 ? $user
                         <div class="p-3 bg-light rounded-4 border shadow-sm">
                             <h6 class="fw-bold mb-2 small text-primary"><i class="fa fa-info-circle me-2"></i>นโยบายค่าจัดส่งตามระยะทาง</h6>
                             <div class="row g-2 text-center">
-                                <div class="col-4">
+                                <div class="col-6">
                                     <div class="p-2 bg-white rounded-3 shadow-sm border-top border-success border-3">
                                         <div class="small fw-bold text-success mb-1">ระยะใกล้</div>
                                         <div class="smaller text-muted" style="font-size: 0.65rem;">0-<?= $d1 ?> กม.</div>
                                         <div class="fw-bold h6 mb-0 text-success">ฟรี</div>
                                     </div>
                                 </div>
-                                <div class="col-4">
+                                <div class="col-6">
                                     <div class="p-2 bg-white rounded-3 shadow-sm border-top border-primary border-3">
-                                        <div class="small fw-bold text-primary mb-1">ระยะกลาง</div>
-                                        <div class="smaller text-muted" style="font-size: 0.65rem;"><?= $d1 ?>-<?= $d2 ?> กม.</div>
+                                        <div class="small fw-bold text-primary mb-1">ระยะปกติ</div>
+                                        <div class="smaller text-muted" style="font-size: 0.65rem;"> > <?= $d1 ?> กม.</div>
                                         <div class="fw-bold h6 mb-0 text-primary"><?= $f2 ?>.-</div>
-                                    </div>
-                                </div>
-                                <div class="col-4">
-                                    <div class="p-2 bg-white rounded-3 shadow-sm border-top border-danger border-3">
-                                        <div class="small fw-bold text-danger mb-1">ระยะไกล</div>
-                                        <div class="smaller text-muted" style="font-size: 0.65rem;">> <?= $d2 ?> กม.</div>
-                                        <div class="fw-bold h6 mb-0 text-danger">ตามตกลง</div>
                                     </div>
                                 </div>
                             </div>
@@ -202,9 +195,7 @@ $default_lng = (float)($user['m_longitude'] && $user['m_longitude'] != 0 ? $user
             var dist = calcDist(sLat, sLng, la, lo);
             var fT = "ฟรี", bC = "bg-primary", distName = "ระยะใกล้";
             
-            if (dist > d2) { fT = "ติดต่อร้านค้า"; bC = "bg-danger"; distName = "ระยะไกล"; }
-            else if (dist > d1) { fT = f2 + " บาท"; bC = "bg-warning text-dark"; distName = "ระยะกลาง"; }
-
+            if (dist > d1) { fT = f2 + " บาท"; bC = "bg-warning text-dark"; distName = "ระยะปกติ"; }
 
             document.getElementById('distance-info').innerHTML = 
                 '<i class="fa fa-route me-2"></i> ' + distName + ': ' + dist.toFixed(2) + ' กม. <span class="ms-2 badge rounded-pill ' + bC + '">ค่าส่ง: ' + fT + '</span>';

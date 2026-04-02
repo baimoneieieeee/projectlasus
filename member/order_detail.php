@@ -158,10 +158,10 @@ $res_items = $conn->query($sql_items);
                                 $base_sum = (float)$order['order_sum'] - $extra_cash - $shipping_fee;
                                 ?>
                                 
-                                <?php if(!empty($order['order_note'])): ?>
+                                <?php if($base_sum > 0 || !empty($order['order_note'])): ?>
                                     <tr>
                                         <td colspan="2" class="py-3">
-                                            <div class="fw-bold text-dark mb-1" style="white-space: pre-wrap;"><?= nl2br(htmlspecialchars($order['order_note'])) ?></div>
+                                            <div class="fw-bold text-dark mb-1" style="white-space: pre-wrap;"><?= !empty($order['order_note']) ? nl2br(htmlspecialchars($order['order_note'])) : 'ค่าบริการซักรีด' ?></div>
                                             <div class="smaller text-muted italic"><i class="fa fa-info-circle"></i> สรุปรายการโดยร้านค้า</div>
                                         </td>
                                         <td class="text-end fw-bold text-dark">฿<?= number_format($base_sum, 2) ?></td>
@@ -205,9 +205,16 @@ $res_items = $conn->query($sql_items);
 
                     <?php if($order['order_status'] == 1 && $order['pay_count'] == 0): ?>
                         <div class="mt-4">
-                            <a href="payment.php?id=<?= $order_id ?>" class="btn btn-primary btn-lg w-100 rounded-pill fw-bold py-3 shadow">
-                                <i class="fa fa-wallet me-2"></i> ไปหน้าชำระเงิน ฿<?= number_format($order['order_sum'], 2) ?>
-                            </a>
+                            <?php if(empty($order['order_note'])): ?>
+                                <div class="alert alert-warning border-0 rounded-4 text-center py-3 shadow-sm">
+                                    <i class="fa fa-calculator me-2"></i> <b>ร้านค้ารับผ้าไปแล้ว</b><br>
+                                    <span class="small">กำลังอยู่ในขั้นตอนตรวจนับและสรุปราคา โปรดรอสักครู่ครับ</span>
+                                </div>
+                            <?php else: ?>
+                                <a href="payment.php?id=<?= $order_id ?>" class="btn btn-primary btn-lg w-100 rounded-pill fw-bold py-3 shadow">
+                                    <i class="fa fa-wallet me-2"></i> ไปหน้าชำระเงิน ฿<?= number_format($order['order_sum'], 2) ?>
+                                </a>
+                            <?php endif; ?>
                         </div>
                     <?php endif; ?>
 
