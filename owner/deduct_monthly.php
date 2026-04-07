@@ -11,6 +11,16 @@ if (isset($_POST['use_quota'])) {
     $order_id = $conn->real_escape_string($_POST['order_id']);
     $m_id = $conn->real_escape_string($_POST['m_id']);
     
+    // --- 🚩 อัปเดตเฉพาะโน้ตร้านค้า (เวลาส่งผ้า) ---
+    if (isset($_POST['update_note_only'])) {
+        $owner_note = $conn->real_escape_string($_POST['order_owner_note'] ?? '');
+        $sql = "UPDATE orders SET order_owner_note = '$owner_note' WHERE order_id = '$order_id'";
+        if ($conn->query($sql)) {
+            header("Location: order_process.php?id=$order_id");
+            exit;
+        }
+    }
+
     if (isset($_POST['manual_mode'])) {
         $quota_deduct = (int)$_POST['quota_deduct'];
         $extra_cash = (float)$_POST['extra_cash'];
@@ -33,12 +43,13 @@ if (isset($_POST['use_quota'])) {
 
         if (!empty($items_to_save)) {
             $parts = array_map(function($it) { return "{$it['name']} ({$it['qty']})"; }, $items_to_save);
-            $itemized_summary = " [" . implode(", ", $parts) . "]";
+            $itemized_summary = "\n" . implode("\n", $parts);
         }
 
         // --- 🚩 1. ดึงข้อมูลออเดอร์ปัจจุบันก่อนเพื่อนำมาใช้คำนวณ ---
-        $old_order_res = $conn->query("SELECT order_note, order_shipping_fee FROM orders WHERE order_id = '$order_id'");
+        $old_order_res = $conn->query("SELECT order_note, order_shipping_fee, order_items_count FROM orders WHERE order_id = '$order_id'");
         $old_order = $old_order_res->fetch_assoc();
+        $old_order_items_count = (int)$old_order['order_items_count'];
         
         // --- 🚩 2. คำนวณยอดเงินรวมใหม่ ---
         $base_price = 0;
@@ -54,20 +65,48 @@ if (isset($_POST['use_quota'])) {
         // ยอดรวมใหม่ = ราคาตั้งต้น + ค่าส่ง + ยอดบวกเพิ่มใหม่
         $new_total_sum = $base_price + (float)$old_order['order_shipping_fee'] + $extra_cash;
         
-        $note_appendix = ($quota_deduct > 0) ? " (เตรียมหักโควตา $quota_deduct ชิ้น$itemized_summary)" : "";
+        // สรุปหมายเหตุ: ใช้จากที่ร้านกรอกมาโดยตรง (ซึ่ง UI สรุปให้แล้ว)
+        $final_note = $summary_note;
         
-        // สรุปหมายเหตุ
-        $final_note = $summary_note . $note_appendix;
-        if($base_price > 0 && strpos($order_id, 'PKG') === 0) {
-             // สำหรับ PKG ให้ต่อท้ายโน้ตเดิมบรรทัดแรก
-             $lines = explode("\n", $old_order['order_note']);
-             $final_note = $lines[0] . "\n" . $summary_note . $note_appendix;
+        if(strpos($order_id, 'PKG') === 0) {
+             // สำหรับ PKG ให้คงชื่อแพ็กเกจในบรรทัดแรกไว้
+             $lines = explode("\n", trim($old_order['order_note']));
+             $pkg_name = $lines[0];
+             $final_note = $pkg_name . "\n" . $summary_note;
         }
 
         // ดึงข้อมูลรอบปัจจุบันมาใส่ด้วย
         $json_file = __DIR__ . '/../config/monthly_data.json';
         $monthly_data = file_exists($json_file) ? json_decode(file_get_contents($json_file), true) : [];
-        $current_pickups = (isset($monthly_data[$m_id]) && $quota_deduct > 0) ? $monthly_data[$m_id]['pickups_used'] : 0;
+        
+        $current_pickups = 0;
+        
+        // --- 🚩 อัปเดตโควตาใน JSON เฉพาะเมื่อเป็นการบันทึกครั้งแรก (order_items_count เดิมเป็น 0) ---
+        if ($old_order_items_count == 0 && $quota_deduct > 0 && isset($monthly_data[$m_id])) {
+            $current_pickups = (int)($monthly_data[$m_id]['pickups_used'] ?? 0);
+            
+            // หักโควตา
+            $monthly_data[$m_id]['quota'] -= $quota_deduct;
+            
+            // เพิ่มรอบการใช้งาน (นับ 1-4)
+            if ($current_pickups >= 4) {
+                $current_pickups = 1; 
+            } else {
+                $current_pickups += 1;
+            }
+            
+            $monthly_data[$m_id]['pickups_used'] = $current_pickups;
+            $monthly_data[$m_id]['updated_at'] = date("Y-m-d H:i:s");
+            file_put_contents($json_file, json_encode($monthly_data, JSON_PRETTY_PRINT));
+        } else if ($quota_deduct > 0 && isset($monthly_data[$m_id])) {
+            // ถ้าเป็นการอัปเดต และยังมีการหักโควตา ให้ใช้รอบเดิมที่มีอยู่
+            $current_pickups = (int)($monthly_data[$m_id]['pickups_used'] ?? 0);
+        } else {
+            // ถ้า quota_deduct เป็น 0 ให้รอบเป็น 0 เพื่อให้ไปปรากฏในรายการ "ซักรายครั้ง"
+            $current_pickups = 0;
+        }
+
+        $owner_note = $conn->real_escape_string($_POST['order_owner_note'] ?? '');
 
         $sql = "UPDATE orders SET 
                 order_status = 1, 
@@ -76,7 +115,8 @@ if (isset($_POST['use_quota'])) {
                 order_note = '$final_note',
                 order_extra_note = '$extra_note',
                 order_extra_cash = $extra_cash,
-                order_pickup_round = $current_pickups
+                order_pickup_round = $current_pickups,
+                order_owner_note = '$owner_note'
                 WHERE order_id = '$order_id'";
         
         if ($conn->query($sql)) {

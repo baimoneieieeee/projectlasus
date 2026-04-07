@@ -23,6 +23,7 @@ if (isset($_POST['update_shop'])) {
     $dist2 = (int)$_POST['dist2'];
     $rate = (int)$_POST['rate'];
     $rate_far = (int)$_POST['rate_far'];
+    $extra_price = (int)$_POST['extra_price'];
 
     if (!empty($_FILES['logo']['tmp_name'])) { move_uploaded_file($_FILES['logo']['tmp_name'], 'logo.png'); }
     if (!empty($_FILES['qrcode']['tmp_name'])) {
@@ -33,7 +34,8 @@ if (isset($_POST['update_shop'])) {
     $sql = "UPDATE shop SET 
             shop_name1 = '$name', shop_address = '$address', shop_tel = '$tel', shop_mail = '$mail', 
             shop_password = '$pass', shop_latitude = '$lat', shop_longitude = '$lng',
-            shop_dist_1 = '$dist1', shop_dist_2 = '$dist2', shop_rate = '$rate', shop_rate_far = '$rate_far'
+            shop_dist_1 = '$dist1', shop_dist_2 = '$dist2', shop_rate = '$rate', shop_rate_far = '$rate_far',
+            shop_extra_price = '$extra_price'
             WHERE shop_id = '$shop_id'";
     
     if ($conn->query($sql)) {
@@ -98,11 +100,14 @@ $default_lng = $shop['shop_longitude'] ?: 100.5018;
                                             <td>เกิน <span class="fw-bold text-primary"><?= $shop['shop_dist_1'] ?></span> กม. ขึ้นไป</td>
                                             <td><input type="number" name="rate" class="fee-input text-primary" value="<?= $shop['shop_rate'] ?>"></td>
                                         </tr>
+                                        <tr class="border-top">
+                                            <td class="fw-bold text-danger">ค่าบริการซักเกินโควตา</td>
+                                            <td>ราคาต่อชิ้น (สำหรับสมาชิก)</td>
+                                            <td><input type="number" name="extra_price" class="fee-input text-danger" value="<?= $shop['shop_extra_price'] ?>"></td>
+                                        </tr>
                                         <!-- Hidden inputs for legacy variables to avoid DB errors or breaking code -->
                                         <input type="hidden" name="dist2" value="<?= $shop['shop_dist_2'] ?>">
-                                        <input type="
-                                        hidden" name="rate_far" value="<?= $shop['shop_rate_far'] ?>">
-
+                                        <input type="hidden" name="rate_far" value="<?= $shop['shop_rate_far'] ?>">
                                     </tbody>
                                 </table>
                             </div>

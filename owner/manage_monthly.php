@@ -27,6 +27,10 @@ if (!empty($active_ids)) {
 } else {
     $res = null;
 }
+
+// ดึงราคาซักเกินจากฐานข้อมูล
+$shop_q = $conn->query("SELECT shop_extra_price FROM shop LIMIT 1")->fetch_assoc();
+$extra_price_per_piece = (int)($shop_q['shop_extra_price'] ?? 10);
 ?>
 <!doctype html>
 <html lang="th">
@@ -217,17 +221,21 @@ if (!empty($active_ids)) {
 
                         <div class="mb-3">
                             <label class="form-label small fw-bold text-secondary">จำนวนผ้าที่ซักรวม (ชิ้น)</label>
-                            <input type="number" name="amount" id="deduct_amount" class="form-control form-control-lg text-center fw-bold border-0 bg-light" style="border-radius: 15px;" min="1" value="1" readonly required>
+                            <input type="number" name="amount" id="deduct_amount" class="form-control form-control-lg text-center fw-bold border-0 bg-light" style="border-radius: 15px;" min="1" value="2" readonly required>
+                            <div id="quota_warning" class="mt-2 p-2 bg-danger bg-opacity-10 text-danger rounded-3 smaller d-none">
+                                <i class="fa fa-exclamation-triangle me-1"></i> เกินโควตาไป <span id="over_count">0</span> ชิ้น 
+                                (แนะนำเรียกเก็บเพิ่ม <span id="suggest_extra">0</span> บาท)
+                            </div>
                         </div>
                         <hr class="my-4 opacity-50">
                         <div class="row g-2">
                             <div class="col-6">
                                 <label class="form-label small fw-bold text-danger">เรียกเก็บเงินเพิ่ม (บาท)</label>
-                                <input type="number" name="extra_cash" class="form-control border-0 bg-danger bg-opacity-10 text-danger fw-bold" style="border-radius: 12px;" value="0" min="0">
+                                <input type="number" name="extra_cash" id="extra_cash" class="form-control border-0 bg-danger bg-opacity-10 text-danger fw-bold" style="border-radius: 12px;" value="0" min="0">
                             </div>
                             <div class="col-6">
                                 <label class="form-label small fw-bold text-secondary">เหตุผลที่เก็บเพิ่ม</label>
-                                <input type="text" name="extra_note" class="form-control border-0 bg-light" style="border-radius: 12px;" placeholder="เช่น ค่าผ้านวม">
+                                <input type="text" name="extra_note" id="extra_note" class="form-control border-0 bg-light" style="border-radius: 12px;" placeholder="เช่น ค่าผ้านวม">
                             </div>
                         </div>
                         <div class="form-text smaller text-muted mt-2 mb-4 text-center">หากกรอกเงินเพิ่ม ระบบจะแจ้งให้ลูกค้าโอนเงินส่วนต่างก่อนเริ่มซัก</div>
@@ -244,6 +252,7 @@ if (!empty($active_ids)) {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         const deductModal = new bootstrap.Modal(document.getElementById('deductModal'));
+        let current_quota = 0;
         
         function addItemRow() {
             const container = document.getElementById('item_list_container');
@@ -264,21 +273,59 @@ if (!empty($active_ids)) {
                 total += parseInt(input.value) || 0;
             });
             document.getElementById('deduct_amount').value = total;
+
+            // ตรวจสอบโควตา
+            const warning = document.getElementById('quota_warning');
+            const overCountSpan = document.getElementById('over_count');
+            const suggestExtraSpan = document.getElementById('suggest_extra');
+            const extraCashInput = document.getElementById('extra_cash');
+            const extraNoteInput = document.getElementById('extra_note');
+            const extraPrice = <?= $extra_price_per_piece ?>;
+
+            if (total > current_quota) {
+                const over = total - current_quota;
+                const suggest = over * extraPrice; 
+                warning.classList.remove('d-none');
+                overCountSpan.innerText = over;
+                suggestExtraSpan.innerText = suggest;
+                
+                // ใส่ค่าแนะนำให้อัตโนมัติถ้ายังเป็น 0
+                if (extraCashInput.value == 0 || extraCashInput.value == (over-1)*extraPrice) {
+                    extraCashInput.value = suggest;
+                    extraNoteInput.value = `ซักเกินโควตา ${over} ชิ้น`;
+                }
+            } else {
+                warning.classList.add('d-none');
+                // ถ้าไม่เกิน และโน้ตเป็นเรื่องซักเกิน ให้ล้างค่า
+                if (extraNoteInput.value.includes('ซักเกินโควตา')) {
+                    extraCashInput.value = 0;
+                    extraNoteInput.value = '';
+                }
+            }
         }
 
         function openDeductModal(id, name, quota) {
+            current_quota = quota;
             document.getElementById('modal_m_id').value = id;
             document.getElementById('modal_m_name').innerText = name;
             document.getElementById('modal_m_quota').innerText = quota;
-            document.getElementById('deduct_amount').max = quota;
-            // รีเซ็ตรายการผ้าให้เหลือแถวเดียว
+            
+            // รีเซ็ตรายการผ้าให้มี เสื้อยืด และ กางเกง เป็นค่าพื้นฐาน
             document.getElementById('item_list_container').innerHTML = `
                 <div class="row g-2 mb-2 item-row">
-                    <div class="col-7"><input type="text" name="item_names[]" class="form-control form-control-sm border-0 rounded-3" placeholder="เช่น เสื้อยืด"></div>
+                    <div class="col-7"><input type="text" name="item_names[]" class="form-control form-control-sm border-0 rounded-3" value="เสื้อยืด" placeholder="เช่น เสื้อยืด"></div>
                     <div class="col-3"><input type="number" name="item_qtys[]" class="form-control form-control-sm border-0 rounded-3 text-center item-qty" value="1" min="1" onchange="calcTotal()"></div>
-                    <div class="col-2"></div>
+                    <div class="col-2"><button type="button" class="btn btn-sm text-danger border-0" onclick="this.closest('.item-row').remove(); calcTotal();"><i class="fa fa-times"></i></button></div>
+                </div>
+                <div class="row g-2 mb-2 item-row">
+                    <div class="col-7"><input type="text" name="item_names[]" class="form-control form-control-sm border-0 rounded-3" value="กางเกง" placeholder="เช่น กางเกง"></div>
+                    <div class="col-3"><input type="number" name="item_qtys[]" class="form-control form-control-sm border-0 rounded-3 text-center item-qty" value="1" min="1" onchange="calcTotal()"></div>
+                    <div class="col-2"><button type="button" class="btn btn-sm text-danger border-0" onclick="this.closest('.item-row').remove(); calcTotal();"><i class="fa fa-times"></i></button></div>
                 </div>
             `;
+            
+            document.getElementById('extra_cash').value = 0;
+            document.getElementById('extra_note').value = '';
             calcTotal();
             deductModal.show();
         }

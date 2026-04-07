@@ -19,10 +19,11 @@ if (!isset($_GET['id']) || empty(trim($_GET['id']))) {
 
 $order_id = $conn->real_escape_string(trim($_GET['id']));
 
-// ดึงข้อมูลออเดอร์พร้อมข้อมูลสมาชิก
-$sql = "SELECT o.*, m.m_name, m.m_lastname, m.m_tel, m.m_latitude, m.m_longitude, m.m_address
+// ดึงข้อมูลออเดอร์พร้อมข้อมูลสมาชิก และหมายเหตุจากคำขอแรก
+$sql = "SELECT o.*, m.m_name, m.m_lastname, m.m_tel, m.m_latitude, m.m_longitude, m.m_address, r.rq_note
         FROM orders o 
         JOIN member m ON o.m_id = m.m_id 
+        LEFT JOIN request r ON o.rq_id = r.rq_id
         WHERE o.order_id = '$order_id'";
 $res = $conn->query($sql);
 $order = $res->fetch_assoc();
@@ -31,11 +32,29 @@ if (!$order) {
     die("ไม่พบข้อมูลออเดอร์");
 }
 
+// --- 🧺 ส่วนการดึงรายการผ้าจาก Note เพื่อนำมาขึ้นเป็นค่าเริ่มต้น ---
+$prefilled_items = [];
+if (!empty($order['rq_note'])) {
+    // ใช้ Regex ดึงข้อมูลรูปแบบ "- ชื่อรายการ (X ชิ้น)"
+    preg_match_all('/-\s+(.*?)\s+\((\d+)\s+ชิ้น\)/', $order['rq_note'], $matches);
+    if (!empty($matches[1])) {
+        foreach ($matches[1] as $idx => $name) {
+            $prefilled_items[] = ['name' => trim($name), 'qty' => (int)$matches[2][$idx]];
+        }
+    }
+}
+
 // เช็คว่าเป็นสมาชิกรายเดือนหรือไม่
 $json_file = __DIR__ . '/../config/monthly_data.json';
 $monthly_data = file_exists($json_file) ? json_decode(file_get_contents($json_file), true) : [];
 $is_monthly = isset($monthly_data[$order['m_id']]);
 $member_quota = $is_monthly ? $monthly_data[$order['m_id']]['quota'] : 0;
+$is_pkg_order = (strpos(trim($order['order_id']), 'PKG') === 0);
+
+// --- 🚩 ตรวจสอบว่าใน Note มีการระบุ "หักโควตา" หรือไม่ ---
+$rq_has_quota = (strpos($order['rq_note'], 'หักโควตา') !== false);
+// ออเดอร์รายครั้งจริงๆ คือ (ไม่ใช่ PKG) และ (ไม่ใช่สมาชิกรายเดือน หรือ สมาชิกรายเดือนที่แจ้งมาแบบไม่หักโควตา)
+$is_actually_one_time = (!$is_pkg_order) && (!$is_monthly || !$rq_has_quota);
 
 // ดึงข้อมูลการชำระเงิน (ถ้ามี)
 $sql_pay = "SELECT * FROM payment WHERE order_id = '$order_id' ORDER BY payment_date DESC LIMIT 1";
@@ -133,12 +152,13 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
                         
                         <?php if($payment): ?>
                             <div class="mb-4">
-                                <div class="info-label">สลิปจากลูกค้า (<?= date('d/m/y H:i', strtotime($payment['payment_date'])) ?>)</div>
+                                <div class="info-label">สลิปการชำระเงิน (<?= date('d/m/y H:i', strtotime($payment['payment_date'])) ?>)</div>
                                 <div class="mt-2 rounded-4 overflow-hidden border">
                                     <img src="data:image/jpeg;base64,<?= base64_encode($payment['payment_image']) ?>" class="img-fluid w-100" style="max-height: 400px; object-fit: contain; cursor: zoom-in;" onclick="window.open(this.src)">
                                 </div>
                                 <div class="text-center mt-2">
-                                    <span class="small text-muted">ยอดแจ้งโอน: <b>฿<?= number_format($payment['payment_amount'], 2) ?></b></span>
+                                    <div class="badge bg-success bg-opacity-10 text-success rounded-pill px-3 mb-1">ชำระเงินเรียบร้อยแล้ว</div><br>
+                                    <span class="small text-muted">ยอดที่ชำระ: <b>฿<?= number_format($payment['payment_amount'], 2) ?></b></span>
                                 </div>
                             </div>
 
@@ -149,8 +169,13 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
                             <?php endif; ?>
                         <?php else: ?>
                             <div class="text-center py-4">
-                                <i class="fa fa-clock fa-3x text-light mb-3"></i>
-                                <p class="text-muted small">รอลูกค้าแจ้งโอน <b>฿<?= number_format($order['order_sum'], 2) ?></b></p>
+                                <?php if($order['order_sum'] <= 0): ?>
+                                    <i class="fa fa-check-circle fa-3x text-success mb-3"></i>
+                                    <p class="text-success fw-bold">ฟรี (ไม่มีค่าใช้จ่าย)</p>
+                                <?php else: ?>
+                                    <i class="fa fa-clock fa-3x text-light mb-3"></i>
+                                    <p class="text-muted small">รอลูกค้าแจ้งโอน <b>฿<?= number_format($order['order_sum'], 2) ?></b></p>
+                                <?php endif; ?>
                             </div>
                         <?php endif; ?>
                     </div>
@@ -201,7 +226,7 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
                         <?php endif; ?>
 
                         <!-- ฟอร์มบันทึก (จะถูกพับไว้ถ้ามีข้อมูลแล้ว) -->
-                        <div class="collapse <?= (empty($order['order_note']) && $order['order_items_count'] == 0) ? 'show' : '' ?> mb-4" id="editForm">
+                        <div class="collapse <?= ($order['order_items_count'] == 0) ? 'show' : '' ?> mb-4" id="editForm">
                             <form method="post" action="deduct_monthly.php" class="p-4 rounded-4 border bg-light shadow-sm">
                                 <input type="hidden" name="order_id" value="<?= $order_id ?>">
                                 <input type="hidden" name="m_id" value="<?= $order['m_id'] ?>">
@@ -216,22 +241,64 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
                                             </button>
                                         </div>
                                         <div id="item_list_container" class="bg-white p-3 rounded-4 border shadow-sm mb-3">
+                                            <?php 
+                                            // 1. ถ้าเป็นงานซักรายครั้ง (หรือสมาชิกที่ไม่ได้ส่งแบบหักโควตา) และมีข้อมูลที่ลูกค้าแจ้งมา -> ให้เติมค่าตามลูกค้า
+                                            if($order['order_items_count'] == 0 && $is_actually_one_time && !empty($prefilled_items)): 
+                                                foreach($prefilled_items as $p_it):
+                                            ?>
                                             <div class="row g-2 mb-2 item-row">
-                                                <div class="col-8"><input type="text" name="item_names[]" class="form-control rounded-3" placeholder="เช่น เสื้อยืด"></div>
+                                                <div class="col-8"><input type="text" name="item_names[]" class="form-control rounded-3 item-name" value="<?= htmlspecialchars($p_it['name']) ?>" placeholder="เช่น เสื้อยืด" onchange="updateSummary()"></div>
+                                                <div class="col-3"><input type="number" name="item_qtys[]" class="form-control rounded-3 text-center item-qty" value="<?= $p_it['qty'] ?>" min="1" onchange="calcTotal()"></div>
+                                                <div class="col-1"><button type="button" class="btn btn-sm text-danger border-0 mt-1" onclick="this.closest('.item-row').remove(); calcTotal();"><i class="fa fa-times"></i></button></div>
+                                            </div>
+                                            <?php 
+                                                endforeach;
+                                            // 2. ถ้าเป็นงานรายเดือน (หรือสมัคร PKG) -> ใช้ค่าพื้นฐาน เสื้อยืด/กางเกง
+                                            elseif($order['order_items_count'] == 0): 
+                                            ?>
+                                            <div class="row g-2 mb-2 item-row">
+                                                <div class="col-8"><input type="text" name="item_names[]" class="form-control rounded-3 item-name" value="เสื้อยืด" placeholder="เช่น เสื้อยืด" onchange="updateSummary()"></div>
+                                                <div class="col-3"><input type="number" name="item_qtys[]" class="form-control rounded-3 text-center item-qty" value="1" min="1" onchange="calcTotal()"></div>
+                                                <div class="col-1"><button type="button" class="btn btn-sm text-danger border-0 mt-1" onclick="this.closest('.item-row').remove(); calcTotal();"><i class="fa fa-times"></i></button></div>
+                                            </div>
+                                            <div class="row g-2 mb-2 item-row">
+                                                <div class="col-8"><input type="text" name="item_names[]" class="form-control rounded-3 item-name" value="กางเกง" placeholder="เช่น กางเกง" onchange="updateSummary()"></div>
+                                                <div class="col-3"><input type="number" name="item_qtys[]" class="form-control rounded-3 text-center item-qty" value="1" min="1" onchange="calcTotal()"></div>
+                                                <div class="col-1"><button type="button" class="btn btn-sm text-danger border-0 mt-1" onclick="this.closest('.item-row').remove(); calcTotal();"><i class="fa fa-times"></i></button></div>
+                                            </div>
+                                            <?php else: ?>
+                                            <div class="row g-2 mb-2 item-row">
+                                                <div class="col-8"><input type="text" name="item_names[]" class="form-control rounded-3 item-name" placeholder="เช่น เสื้อยืด" onchange="updateSummary()"></div>
                                                 <div class="col-3"><input type="number" name="item_qtys[]" class="form-control rounded-3 text-center item-qty" value="1" min="1" onchange="calcTotal()"></div>
                                                 <div class="col-1"></div>
                                             </div>
+                                            <?php endif; ?>
                                         </div>
                                     </div>
 
                                     <?php 
                                     $is_pkg_order = (strpos(trim($order['order_id']), 'PKG') === 0);
                                     if($is_monthly || $is_pkg_order): 
+                                        $default_deduct = $order['order_items_count'] ?: 0;
+                                        // ถ้าเป็นงานซักปกติ และยังไม่เคยบันทึก ให้ลองเดาค่าจาก Note (ถ้ามี "หักโควตา")
+                                        if($default_deduct == 0 && strpos($order['rq_note'], 'หักโควตา') !== false) {
+                                            preg_match_all('/หักโควตา[^\d]*(\d+)/', $order['rq_note'], $m_q);
+                                            $default_deduct = array_sum($m_q[1] ?? [0]);
+                                        }
                                     ?>
                                     <div class="col-md-4">
-                                        <label class="form-label fw-bold small text-secondary">จำนวนผ้าปกติที่หักโควตา (ชิ้น)</label>
-                                        <input type="number" name="quota_deduct" id="deduct_amount" class="form-control form-control-lg rounded-3 border-0 shadow-sm bg-light fw-bold text-center" value="<?= $order['order_items_count'] ?: 1 ?>" min="0" readonly required>
-                                        <div class="form-text smaller text-primary">คำนวณอัตโนมัติจากรายการด้านบน</div>
+                                        <label class="form-label fw-bold small text-primary"><i class="fa fa-cut me-1"></i> จำนวนผ้าที่หักโควตา (ชิ้น)</label>
+                                        <input type="number" name="quota_deduct" id="deduct_amount" class="form-control form-control-lg rounded-3 border-primary shadow-sm bg-white fw-bold text-center" value="<?= $default_deduct ?>" min="0" required>
+                                        <div class="form-text smaller text-primary">ใส่ 0 หากเป็นงานซักแยก (ไม่ใช้โควตา)</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label fw-bold small text-success"><i class="fa fa-money-bill-wave me-1"></i> ค่าบริการซักแยก (บาท)</label>
+                                        <?php 
+                                        // พยายามหาค่าบริการหลักเดิม (ถ้าลูกค้าส่งแบบจ่ายเงินสด)
+                                        $current_base = (float)$order['order_sum'] - (float)$order['order_extra_cash'] - (float)$order['order_shipping_fee'];
+                                        ?>
+                                        <input type="number" step="0.01" name="service_price" class="form-control form-control-lg rounded-3 border-success shadow-sm text-success fw-bold text-center" value="<?= $current_base ?>" min="0" required>
+                                        <div class="form-text smaller text-success">ยอดเงินซักแยก (ถ้ามี)</div>
                                     </div>
                                     <?php else: ?>
                                         <div class="col-md-4">
@@ -260,18 +327,45 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
                                         <label class="form-label fw-bold small text-secondary">เหตุผลที่เรียกเก็บเพิ่ม</label>
                                         <input type="text" name="extra_note" class="form-control form-control-lg rounded-3 border-0 shadow-sm" value="<?= htmlspecialchars($order['order_extra_note']) ?>" placeholder="เช่น ค่าผ้านวม 50, ซักเกิน 10 ชิ้น 100">
                                     </div>
+                                    <div class="col-md-12 d-none">
+                                        <label class="form-label fw-bold small text-secondary">สรุปรายการ (ซ่อนไว้เพื่อส่งค่าไปยังฐานข้อมูล)</label>
+                                        <input type="text" name="summary_note" id="summary_note" class="form-control" value="<?= ($order['order_items_count'] == 0) ? "เสื้อยืด (1)\nกางเกง (1)" : '' ?>">
+                                    </div>
                                     <div class="col-md-12">
-                                        <label class="form-label fw-bold small text-secondary">สรุปรายการ (โชว์ที่หน้าบิล)</label>
-                                        <input type="text" name="summary_note" class="form-control form-control-lg rounded-3 shadow-sm" placeholder="เช่น ผ้า 10 + ผ้านวม 1" required>
+                                        <label class="form-label fw-bold small text-secondary">หมายเหตุจากร้านค้า (เช่น เวลาส่งผ้า หรือแจ้งเตือนอื่นๆ)</label>
+                                        <input type="text" name="order_owner_note" class="form-control form-control-lg rounded-3 border-0 shadow-sm bg-white" value="<?= htmlspecialchars($order['order_owner_note'] ?? '') ?>" placeholder="เช่น จะนำผ้าไปส่งช่วงเย็นวันนี้ครับ">
                                     </div>
                                     <div class="col-12 mt-4">
                                         <button type="submit" name="use_quota" class="btn btn-primary btn-lg w-100 rounded-pill fw-bold py-3 shadow border-0">
-                                            <i class="fa fa-save me-2"></i> <?= (empty($order['order_note']) && $order['order_items_count'] == 0) ? 'บันทึกข้อมูลงาน' : 'อัปเดตข้อมูลงาน' ?>
+                                            <i class="fa fa-save me-2"></i> <?= ($order['order_items_count'] == 0) ? 'บันทึกข้อมูลงาน' : 'อัปเดตข้อมูลงาน' ?>
                                         </button>
                                     </div>
                                 </div>
                             </form>
                         </div>
+
+                        <!-- 🕒 ส่วนระบุหมายเหตุ/เวลาส่ง (โชว์ตลอดเพื่อให้เจ้าของอัปเดตได้) -->
+                        <?php if($order['order_items_count'] > 0): ?>
+                        <div class="mt-4 p-4 bg-white rounded-4 border shadow-sm">
+                            <h6 class="fw-bold mb-3 text-dark"><i class="fa fa-clock me-2 text-warning"></i> อัปเดตนัดหมาย/เวลาส่งผ้าคืน</h6>
+                            <form method="post" action="deduct_monthly.php">
+                                <input type="hidden" name="order_id" value="<?= $order_id ?>">
+                                <input type="hidden" name="m_id" value="<?= $order['m_id'] ?>">
+                                <input type="hidden" name="update_note_only" value="1">
+                                <div class="row g-3">
+                                    <div class="col-md-9">
+                                        <label class="form-label fw-bold small text-secondary">แจ้งนัดหมายหรือเวลาส่งคืนให้ลูกค้าทราบ</label>
+                                        <input type="text" name="order_owner_note" class="form-control form-control-lg rounded-3 bg-light border-0" value="<?= htmlspecialchars($order['order_owner_note'] ?? '') ?>" placeholder="เช่น จะส่งคืนวันพรุ่งนี้ 10:00 น.">
+                                    </div>
+                                    <div class="col-md-3 d-flex align-items-end">
+                                        <button type="submit" name="use_quota" class="btn btn-warning w-100 rounded-pill fw-bold py-3 shadow-sm">
+                                            <i class="fa fa-save me-1"></i> อัปเดตโน้ต
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                        <?php endif; ?>
                         <?php else: // 🚩 เมื่อกดยืนยันแล้ว ให้โชว์แค่สรุป ไม่ต้องโชว์ช่องกรอก ?>
                             <div class="p-4 bg-light rounded-4 border-start border-primary border-5 shadow-sm">
                                 <div class="row align-items-center">
@@ -389,7 +483,7 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
             const row = document.createElement('div');
             row.className = 'row g-2 mb-2 item-row';
             row.innerHTML = `
-                <div class="col-8"><input type="text" name="item_names[]" class="form-control rounded-3" placeholder="รายการผ้า"></div>
+                <div class="col-8"><input type="text" name="item_names[]" class="form-control rounded-3 item-name" placeholder="รายการผ้า" onchange="updateSummary()"></div>
                 <div class="col-3"><input type="number" name="item_qtys[]" class="form-control rounded-3 text-center item-qty" value="1" min="1" onchange="calcTotal()"></div>
                 <div class="col-1"><button type="button" class="btn btn-sm text-danger border-0 mt-1" onclick="this.closest('.item-row').remove(); calcTotal();"><i class="fa fa-times"></i></button></div>
             `;
@@ -402,9 +496,36 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
             document.querySelectorAll('.item-qty').forEach(input => {
                 total += parseInt(input.value) || 0;
             });
+            
             const amountInput = document.getElementById('deduct_amount');
-            if (amountInput) amountInput.value = total;
+            const isOneTime = <?= json_encode($is_actually_one_time) ?>;
+            
+            // 🚩 อัปเดตโควตาอัตโนมัติเฉพาะ "งานรายเดือน" เท่านั้น
+            // งานรายครั้ง (เช่น ซักชุดราชการ) จะไม่หักโควตาอัตโนมัติ (เป็น 0 หรือเจ้าของแก้เอง)
+            if (amountInput && !isOneTime) {
+                amountInput.value = total;
+            }
+            updateSummary();
         }
+
+        function updateSummary() {
+            const items = [];
+            document.querySelectorAll('.item-row').forEach(row => {
+                const name = row.querySelector('.item-name').value.trim();
+                const qty = row.querySelector('.item-qty').value;
+                if (name) {
+                    items.push(`${name} (${qty})`);
+                }
+            });
+            const summaryInput = document.getElementById('summary_note');
+            if (summaryInput) summaryInput.value = items.join('\n');
+        }
+
+        window.onload = function() {
+            if (document.querySelectorAll('.item-row').length > 0) {
+                calcTotal();
+            }
+        };
     </script>
 </body>
 </html>

@@ -40,11 +40,11 @@ if (isset($_POST['m_id'])) {
     
     $current_used = isset($monthly_data[$m_id]['pickups_used']) ? (int)$monthly_data[$m_id]['pickups_used'] : 0;
     
-    // กั้นรอบไม่ให้เกิน 4
-    if ($current_used < 4) {
-        $next_round = $current_used + 1;
+    // รีเซ็ตรอบถ้าครบ 4 แล้ว (เริ่มเดือนใหม่) หรือเพิ่มทีละ 1
+    if ($current_used >= 4) {
+        $next_round = 1; 
     } else {
-        $next_round = 0; // ถ้าเกิน 4 ครั้งแล้ว ให้ถือเป็นรอบพิเศษ (ไม่นับเพิ่ม)
+        $next_round = $current_used + 1;
     }
 
     // 2. สร้างออเดอร์

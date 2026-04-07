@@ -53,17 +53,19 @@ $normal_orders = [];
 
 while($o = $res_orders->fetch_assoc()) {
     $is_pkg = (strpos($o['order_id'], 'PKG') === 0);
+    $has_round = ((int)$o['order_pickup_round'] > 0);
     
-    // รายเดือน: เป็น PKG หรือ มีเลขรอบสมาชิกที่มากกว่า 0
-    if($is_pkg || (int)$o['order_pickup_round'] > 0) {
+    // รายเดือน: ต้องเป็น PKG หรือ มีการนับ "รอบสมาชิก" (1-4) เท่านั้น
+    if($is_pkg || $has_round) {
         $monthly_orders[] = $o;
     } else {
+        // งานซักทั่วไป (จ่ายเงินสด) จะมาอยู่ที่นี่เสมอ
         $normal_orders[] = $o;
     }
 }
 
-// 🛡️ ดึงข้อมูลคำขอที่ยังค้างอยู่
-$sql_reqs = "SELECT * FROM request WHERE m_id = '$m_id' AND rq_status = 0 ORDER BY rq_date DESC";
+// 🛡️ ดึงข้อมูลคำขอที่ยังค้างอยู่ หรือเพิ่งถูกปฏิเสธ
+$sql_reqs = "SELECT * FROM request WHERE m_id = '$m_id' AND rq_status IN (0, 2) ORDER BY rq_date DESC LIMIT 5";
 $res_reqs = $conn->query($sql_reqs);
 
 // --- 🚩 กำหนดข้อความและสีสถานะส่วนกลาง ---
@@ -134,7 +136,11 @@ $s_color = [0=>'bg-secondary', 1=>'bg-warning text-dark', 2=>'bg-info', 3=>'bg-p
                             <h2 class="fw-bold mb-3"><?= $my_quota ?> <small class="fs-6 fw-normal">ชิ้น</small></h2>
                             <div class="border-top border-white border-opacity-20 pt-3">
                                 <p class="mb-1 small opacity-75">สิทธิ์การส่งซักเดือนนี้</p>
-                                <h5 class="fw-bold mb-0">ครั้งที่ <?= ($my_pickups) ?> <small class="fs-6 fw-normal text-white-50">/ 4 ครั้ง</small></h5>
+                                <?php 
+                                    // คำนวณรอบให้เป็น 1-4 เสมอ (Cycle)
+                                    $display_pickups = ($my_pickups > 0) ? ($my_pickups % 4 ?: 4) : 0;
+                                ?>
+                                <h5 class="fw-bold mb-0">ครั้งที่ <?= $display_pickups ?> <small class="fs-6 fw-normal text-white-50">/ 4 ครั้ง</small></h5>
                                 <div class="smaller text-white-50 mt-2" style="font-size: 0.65rem;">* ครบ 4 ครั้ง ระบบจะเริ่มรอบสมาชิกใหม่ทันที</div>
                             </div>
                         </div>
@@ -189,24 +195,35 @@ $s_color = [0=>'bg-secondary', 1=>'bg-warning text-dark', 2=>'bg-info', 3=>'bg-p
 
             <!-- Main Content / History -->
             <div class="col-lg-8">
-                <!-- คำขอที่รอรับ -->
+                <!-- คำขอที่รอรับ หรือ ถูกปฏิเสธ -->
                 <?php if($res_reqs->num_rows > 0): ?>
                 <div class="card card-custom p-4 mb-4 border-start border-warning border-5 shadow-sm">
                     <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h6 class="fw-bold mb-0"><i class="fa fa-clock me-2 text-warning"></i> กำลังรอร้านตอบรับ</h6>
-                        <span class="badge bg-warning bg-opacity-10 text-warning px-3 rounded-pill small">Pending</span>
+                        <h6 class="fw-bold mb-0"><i class="fa fa-bell me-2 text-warning"></i> แจ้งเตือนคำขอ</h6>
                     </div>
                     <div class="table-responsive">
                         <table class="table align-middle table-borderless">
                             <tbody>
-                                <?php while($rq = $res_reqs->fetch_assoc()): ?>
-                                <tr class="bg-light bg-opacity-50 rounded-3">
-                                    <td class="small text-muted py-3 ps-3"><?= date('d/m H:i', strtotime($rq['rq_date'])) ?></td>
-                                    <td class="small text-dark fw-medium"><?= htmlspecialchars($rq['rq_note']) ?></td>
+                                <?php while($rq = $res_reqs->fetch_assoc()): 
+                                    $is_rejected = ($rq['rq_status'] == 2);
+                                ?>
+                                <tr class="<?= $is_rejected ? 'bg-danger bg-opacity-10' : 'bg-light bg-opacity-50' ?> rounded-3">
+                                    <td class="small text-muted py-3 ps-3" style="width: 100px;"><?= date('d/m H:i', strtotime($rq['rq_date'])) ?></td>
+                                    <td>
+                                        <div class="small text-dark fw-medium"><?= htmlspecialchars($rq['rq_note']) ?></div>
+                                        <?php if($is_rejected): ?>
+                                            <div class="mt-1 small text-danger fw-bold"><i class="fa fa-times-circle me-1"></i> ปฏิเสธ: <?= htmlspecialchars($rq['rq_reject_note'] ?: 'ไม่ระบุเหตุผล') ?></div>
+                                        <?php endif; ?>
+                                    </td>
                                     <td class="text-end pe-3">
-                                        <a href="cancel_request.php?id=<?= $rq['rq_id'] ?>" 
-                                           class="btn btn-sm btn-link text-danger text-decoration-none fw-bold" 
-                                           onclick="return confirm('ยกเลิกคำขอนี้?')">ยกเลิก</a>
+                                        <?php if(!$is_rejected): ?>
+                                            <span class="badge bg-warning text-dark px-3 rounded-pill smaller">รอร้านตอบรับ</span>
+                                            <a href="cancel_request.php?id=<?= $rq['rq_id'] ?>" 
+                                               class="btn btn-sm btn-link text-danger text-decoration-none fw-bold small ms-2" 
+                                               onclick="return confirm('ยกเลิกคำขอนี้?')">ยกเลิก</a>
+                                        <?php else: ?>
+                                            <span class="badge bg-danger px-3 rounded-pill smaller">ถูกปฏิเสธ</span>
+                                        <?php endif; ?>
                                     </td>
                                 </tr>
                                 <?php endwhile; ?>
@@ -242,9 +259,9 @@ $s_color = [0=>'bg-secondary', 1=>'bg-warning text-dark', 2=>'bg-info', 3=>'bg-p
                                     <td>
                                         <div class="fw-bold text-dark small">#<?= substr($o['order_id'], -6) ?></div>
                                         <?php if(strpos($o['order_id'], 'PKG') === 0): ?>
-                                            <span class="badge bg-primary bg-opacity-10 text-primary" style="font-size: 0.6rem;">สมัคร/ต่อสมาชิก</span>
+                                            <span class="badge bg-primary bg-opacity-10 text-primary" style="font-size: 0.6rem;">แพ็กเกจรายเดือน</span>
                                         <?php else: ?>
-                                            <span class="badge bg-warning bg-opacity-10 text-warning text-dark" style="font-size: 0.6rem;">ส่งซักรายสัปดาห์</span>
+                                            <span class="badge bg-warning bg-opacity-10 text-warning text-dark" style="font-size: 0.6rem;">ส่งซักผ้า (รายเดือน)</span>
                                         <?php endif; ?>
                                     </td>
                                     <td class="small text-muted"><?= date('d/m/y', strtotime($o['order_date'])) ?></td>
@@ -253,30 +270,35 @@ $s_color = [0=>'bg-secondary', 1=>'bg-warning text-dark', 2=>'bg-info', 3=>'bg-p
                                         $round = (int)$o['order_pickup_round'];
                                         // ถ้าเป็นงานรายเดือน (มีหักโควตา) แต่เลขรอบเป็น 0 ให้พยายามดึงรอบจาก JSON มาโชว์
                                         if($round == 0 && (strpos($o['order_note'], 'หักโควตา') !== false)) {
-                                            $round = $my_pickups; // ใช้เลขรอบล่าสุดของสมาชิก
+                                            $round = $my_pickups; 
                                         }
 
-                                        if($round > 0): ?>
-                                            <span class="badge bg-light text-dark border rounded-pill px-2" style="font-size: 0.7rem;"><?= $round ?> / 4</span>
+                                        if($round > 0): 
+                                            // คำนวณให้เป็น 1-4 เสมอ
+                                            $cycle_round = ($round % 4 ?: 4);
+                                        ?>
+                                            <span class="badge bg-light text-dark border rounded-pill px-2" style="font-size: 0.7rem;"><?= $cycle_round ?> / 4</span>
                                         <?php else: ?>
                                             <span class="text-muted" style="font-size: 0.7rem;">-</span>
                                         <?php endif; ?>
                                     </td>
                                     <td>
                                         <?php 
+                                        $qty = isset($o['order_items_count']) ? (int)$o['order_items_count'] : 0;
+                                        if($qty <= 0) {
+                                            preg_match('/หัก[^\d]*(\d+)\s*ชิ้น/u', $o['order_note'], $m);
+                                            $qty = isset($m[1]) ? $m[1] : 0;
+                                        }
+
                                         if(strpos($o['order_id'], 'PKG') === 0): ?>
-                                            <div class="smaller fw-bold text-success"><i class="fa fa-plus-circle"></i> รับโควตาใหม่</div>
-                                        <?php else: 
-                                            // 1. ลองดึงจากฟิลด์ order_items_count (ถ้ามี)
-                                            $qty = isset($o['order_items_count']) ? (int)$o['order_items_count'] : 0;
-                                            
-                                            // 2. ถ้าเป็น 0 ให้ลองหาจากโน้ต (เผื่อฐานข้อมูลรุ่นเก่า)
-                                            if($qty <= 0) {
-                                                preg_match('/หัก[^\d]*(\d+)\s*ชิ้น/u', $o['order_note'], $m);
-                                                $qty = isset($m[1]) ? $m[1] : 0;
-                                            }
-                                        ?>
-                                            <div class="smaller fw-bold text-primary"><i class="fa fa-cut"></i> หัก <?= $qty ?> ชิ้น</div>
+                                            <?php if($qty > 0): ?>
+                                                <div class="smaller fw-bold text-success"><i class="fa fa-plus-circle"></i> รอบที่1</div>
+                                                <div class="smaller fw-bold text-primary"><i class="fa fa-cut"></i> รับผ้าจำนวน <?= $qty ?> ชิ้น</div>
+                                            <?php else: ?>
+                                                <div class="smaller fw-bold text-success"><i class="fa fa-plus-circle"></i> เริ่มต้นแพ็กเกจรายเดือน</div>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            <div class="smaller fw-bold text-primary"><i class="fa fa-cut"></i> รับผ้าจำนวน <?= $qty ?> ชิ้น</div>
                                         <?php endif; ?>
                                     </td>
                                     <td>
@@ -323,7 +345,10 @@ $s_color = [0=>'bg-secondary', 1=>'bg-warning text-dark', 2=>'bg-info', 3=>'bg-p
                             <tbody>
                                 <?php foreach($normal_orders as $o): ?>
                                 <tr>
-                                    <td class="fw-bold text-success small">#<?= substr($o['order_id'], -6) ?></td>
+                                    <td>
+                                        <div class="fw-bold text-success small">#<?= substr($o['order_id'], -6) ?></div>
+                                        <span class="badge bg-success bg-opacity-10 text-success" style="font-size: 0.6rem;">รายการซักรายครั้ง</span>
+                                    </td>
                                     <td class="small text-muted"><?= date('d/m/y', strtotime($o['order_date'])) ?></td>
                                     <td class="fw-bold small text-dark">฿<?= number_format($o['order_sum'], 2) ?></td>
                                     <td>
