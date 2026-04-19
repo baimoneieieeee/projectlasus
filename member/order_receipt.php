@@ -78,9 +78,17 @@ $shop = $conn->query("SELECT * FROM shop LIMIT 1")->fetch_assoc();
                     <td class="text-end fw-bold">฿<?= number_format($item['service_price'] * $item['item_amount'], 2) ?></td>
                 </tr>
                 <?php endwhile; ?>
-                <tr class="border-top"><td colspan="3" class="text-end">รวมยอดบริการ</td><td class="text-end fw-bold">฿<?= number_format($order['order_sum'], 2) ?></td></tr>
-                <tr><td colspan="3" class="text-end">ค่าจัดส่ง</td><td class="text-end fw-bold">฿<?= number_format($order['order_shipping_fee'], 2) ?></td></tr>
-                <tr class="total-row h5"><td colspan="3" class="text-end py-3">ยอดสุทธิ</td><td class="text-end py-3 text-primary">฿<?= number_format($order['order_sum'] + $order['order_shipping_fee'], 2) ?></td></tr>
+                <?php 
+                $shipping_fee = (float)($order['order_shipping_fee'] ?? 0);
+                $extra_cash = (float)($order['order_extra_cash'] ?? 0);
+                $service_sum = (float)$order['order_sum'] - $shipping_fee - $extra_cash;
+                ?>
+                <tr class="border-top"><td colspan="3" class="text-end">รวมยอดบริการ</td><td class="text-end fw-bold">฿<?= number_format($service_sum, 2) ?></td></tr>
+                <?php if($extra_cash > 0): ?>
+                <tr><td colspan="3" class="text-end">ค่าบริการเพิ่มเติม</td><td class="text-end fw-bold">฿<?= number_format($extra_cash, 2) ?></td></tr>
+                <?php endif; ?>
+                <tr><td colspan="3" class="text-end">ค่าจัดส่ง</td><td class="text-end fw-bold">฿<?= number_format($shipping_fee, 2) ?></td></tr>
+                <tr class="total-row h5"><td colspan="3" class="text-end py-3">ยอดสุทธิ</td><td class="text-end py-3 text-primary">฿<?= number_format($order['order_sum'], 2) ?></td></tr>
             </tbody>
         </table>
 

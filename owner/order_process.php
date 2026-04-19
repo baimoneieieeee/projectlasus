@@ -217,6 +217,12 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
                                 <div class="col-md-4 text-md-end border-start border-light ps-4">
                                     <div class="small text-muted mb-1 uppercase fw-bold" style="font-size: 0.65rem;">ยอดรวมที่แจ้งลูกค้า:</div>
                                     <div class="h3 fw-bold text-primary mb-0">฿<?= number_format($order['order_sum'], 2) ?></div>
+                                    
+                                    <!-- 🚚 แสดงค่าจัดส่งให้ชัดเจน -->
+                                    <?php if($order['order_shipping_fee'] > 0): ?>
+                                        <div class="smaller text-muted fw-bold mt-1">+ ค่าจัดส่ง ฿<?= number_format($order['order_shipping_fee'], 2) ?></div>
+                                    <?php endif; ?>
+
                                     <?php if($order['order_extra_cash'] > 0): ?>
                                         <div class="smaller text-danger fw-bold mt-1">+ รวมบวกเพิ่ม ฿<?= number_format($order['order_extra_cash'], 2) ?></div>
                                     <?php endif; ?>
@@ -231,6 +237,14 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
                                 <input type="hidden" name="order_id" value="<?= $order_id ?>">
                                 <input type="hidden" name="m_id" value="<?= $order['m_id'] ?>">
                                 <input type="hidden" name="manual_mode" value="1">
+
+                                <!-- 🚚 ข้อมูลค่าจัดส่ง (แสดงให้ดูเฉยๆ ปรับเปลี่ยนไม่ได้เพราะคำนวณจากระยะทาง) -->
+                                <?php if($order['order_shipping_fee'] > 0): ?>
+                                <div class="alert bg-white border-0 rounded-4 p-3 mb-4 d-flex justify-content-between align-items-center shadow-sm">
+                                    <div class="small fw-bold text-muted"><i class="fa fa-truck me-2 text-primary"></i> ค่าจัดส่ง (คำนวณจากระยะทาง):</div>
+                                    <div class="fw-bold text-dark">฿<?= number_format($order['order_shipping_fee'], 2) ?></div>
+                                </div>
+                                <?php endif; ?>
 
                                 <div class="row g-4">
                                     <div class="col-md-12">
@@ -280,52 +294,60 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
                                     $is_pkg_order = (strpos(trim($order['order_id']), 'PKG') === 0);
                                     if($is_monthly || $is_pkg_order): 
                                         $default_deduct = $order['order_items_count'] ?: 0;
-                                        // ถ้าเป็นงานซักปกติ และยังไม่เคยบันทึก ให้ลองเดาค่าจาก Note (ถ้ามี "หักโควตา")
                                         if($default_deduct == 0 && strpos($order['rq_note'], 'หักโควตา') !== false) {
                                             preg_match_all('/หักโควตา[^\d]*(\d+)/', $order['rq_note'], $m_q);
                                             $default_deduct = array_sum($m_q[1] ?? [0]);
                                         }
                                     ?>
+                                    <!-- 🔵 ส่วนจัดการโควตา (สำหรับสมาชิก) -->
                                     <div class="col-md-4">
-                                        <label class="form-label fw-bold small text-primary"><i class="fa fa-cut me-1"></i> จำนวนผ้าที่หักโควตา (ชิ้น)</label>
-                                        <input type="number" name="quota_deduct" id="deduct_amount" class="form-control form-control-lg rounded-3 border-primary shadow-sm bg-white fw-bold text-center" value="<?= $default_deduct ?>" min="0" required>
-                                        <div class="form-text smaller text-primary">ใส่ 0 หากเป็นงานซักแยก (ไม่ใช้โควตา)</div>
+                                        <div class="p-3 border border-primary border-opacity-25 rounded-4 bg-primary bg-opacity-10">
+                                            <label class="form-label fw-bold small text-primary"><i class="fa fa-cut me-1"></i> หักจากโควตาที่มี (ชิ้น)</label>
+                                            <input type="number" name="quota_deduct" id="deduct_amount" class="form-control form-control-lg rounded-3 border-primary shadow-sm bg-white fw-bold text-center" value="<?= $default_deduct ?>" min="0" required>
+                                            <div class="form-text smaller text-primary">จำนวนผ้าที่ใช้สิทธิ์สมาชิกหักจาก 80 ชิ้น</div>
+                                        </div>
                                     </div>
                                     <div class="col-md-4">
-                                        <label class="form-label fw-bold small text-success"><i class="fa fa-money-bill-wave me-1"></i> ค่าบริการซักแยก (บาท)</label>
-                                        <?php 
-                                        // พยายามหาค่าบริการหลักเดิม (ถ้าลูกค้าส่งแบบจ่ายเงินสด)
-                                        $current_base = (float)$order['order_sum'] - (float)$order['order_extra_cash'] - (float)$order['order_shipping_fee'];
-                                        ?>
-                                        <input type="number" step="0.01" name="service_price" class="form-control form-control-lg rounded-3 border-success shadow-sm text-success fw-bold text-center" value="<?= $current_base ?>" min="0" required>
-                                        <div class="form-text smaller text-success">ยอดเงินซักแยก (ถ้ามี)</div>
+                                        <div class="p-3 border border-success border-opacity-25 rounded-4 bg-success bg-opacity-10">
+                                            <label class="form-label fw-bold small text-success"><i class="fa fa-money-bill-wave me-1"></i> ค่าบริการหลัก / ราคาแพ็กเกจ (บาท)</label>
+                                            <?php 
+                                            $current_base = (float)$order['order_sum'] - (float)$order['order_extra_cash'] - (float)$order['order_shipping_fee'];
+                                            ?>
+                                            <input type="number" step="0.01" name="service_price" class="form-control form-control-lg rounded-3 border-success shadow-sm text-success fw-bold text-center" value="<?= $current_base ?>" min="0" required>
+                                            <div class="form-text smaller text-success">ยอดเงินพื้นฐานที่ต้องเรียกเก็บ (ถ้ามี)</div>
+                                        </div>
                                     </div>
                                     <?php else: ?>
+                                        <!-- 🟢 ส่วนค่าบริการหลัก (สำหรับลูกค้าทั่วไป) -->
                                         <div class="col-md-4">
-                                            <label class="form-label fw-bold small text-secondary">ค่าบริการซักรีดหลัก (บาท)</label>
-                                            <?php 
-                                            // พยายามหาค่าบริการหลักเดิม (order_sum - extra - shipping)
-                                            $current_base = (float)$order['order_sum'] - (float)$order['order_extra_cash'] - (float)$order['order_shipping_fee'];
-                                            if($current_base <= 0) {
-                                                // ถ้าเป็น 0 ให้ลองดึงจาก request (ยอดที่ลูกค้าเห็นตอนกด)
-                                                $rq_info = $conn->query("SELECT rq_sum FROM request WHERE rq_id = '{$order['rq_id']}'")->fetch_assoc();
-                                                $current_base = (float)($rq_info['rq_sum'] ?? 0);
-                                            }
-                                            ?>
-                                            <input type="number" step="0.01" name="service_price" class="form-control form-control-lg rounded-3 border-0 shadow-sm text-primary fw-bold" value="<?= $current_base ?>" min="0" required>
-                                            <div class="form-text smaller text-primary">ยอดเงินค่าซักรีดหลัก</div>
+                                            <div class="p-3 border border-primary border-opacity-25 rounded-4 bg-primary bg-opacity-10">
+                                                <label class="form-label fw-bold small text-primary"><i class="fa fa-money-bill-wave me-1"></i> ค่าบริการซักรีดหลัก (บาท)</label>
+                                                <?php 
+                                                $current_base = (float)$order['order_sum'] - (float)$order['order_extra_cash'] - (float)$order['order_shipping_fee'];
+                                                if($current_base <= 0) {
+                                                    $rq_info = $conn->query("SELECT rq_sum FROM request WHERE rq_id = '{$order['rq_id']}'")->fetch_assoc();
+                                                    $current_base = (float)($rq_info['rq_sum'] ?? 0);
+                                                }
+                                                ?>
+                                                <input type="number" step="0.01" name="service_price" class="form-control form-control-lg rounded-3 border-primary shadow-sm text-primary fw-bold text-center" value="<?= $current_base ?>" min="0" required>
+                                                <div class="form-text smaller text-primary">ยอดเงินค่าบริการปกติที่ลูกค้าต้องจ่าย</div>
+                                            </div>
                                         </div>
                                         <input type="hidden" name="quota_deduct" id="deduct_amount" value="0">
                                     <?php endif; ?>
 
-                                    <div class="col-md-<?= $is_monthly ? '3' : '4' ?>">
-                                        <label class="form-label fw-bold small text-secondary">เรียกเก็บเงินเพิ่ม (บาท)</label>
-                                        <input type="number" step="0.01" name="extra_cash" class="form-control form-control-lg rounded-3 border-0 shadow-sm text-danger fw-bold" value="<?= $order['order_extra_cash'] ?>" min="0" required>
-                                        <div class="form-text smaller text-danger">ระบุยอดรวมของรายการที่ต้องจ่ายเพิ่ม</div>
+                                    <!-- 🔴 ส่วนบวกเพิ่มพิเศษ -->
+                                    <div class="col-md-4">
+                                        <div class="p-3 border border-danger border-opacity-25 rounded-4 bg-danger bg-opacity-10">
+                                            <label class="form-label fw-bold small text-danger"><i class="fa fa-plus-circle me-1"></i> ค่าบริการบวกเพิ่ม (บาท)</label>
+                                            <input type="number" step="0.01" name="extra_cash" class="form-control form-control-lg rounded-3 border-danger shadow-sm text-danger fw-bold text-center" value="<?= $order['order_extra_cash'] ?>" min="0" required>
+                                            <div class="form-text smaller text-danger">กรณีซักผ้าเกินโควตา หรือรายการพิเศษอื่นๆ</div>
+                                        </div>
                                     </div>
-                                    <div class="col-md-<?= $is_monthly ? '5' : '8' ?>">
-                                        <label class="form-label fw-bold small text-secondary">เหตุผลที่เรียกเก็บเพิ่ม</label>
-                                        <input type="text" name="extra_note" class="form-control form-control-lg rounded-3 border-0 shadow-sm" value="<?= htmlspecialchars($order['order_extra_note']) ?>" placeholder="เช่น ค่าผ้านวม 50, ซักเกิน 10 ชิ้น 100">
+
+                                    <div class="col-md-12 mt-3">
+                                        <label class="form-label fw-bold small text-secondary">เหตุผล/รายการที่เรียกเก็บเพิ่ม (ถ้ามี)</label>
+                                        <input type="text" name="extra_note" class="form-control form-control-lg rounded-3 border-0 shadow-sm" value="<?= htmlspecialchars($order['order_extra_note']) ?>" placeholder="เช่น ผ้านวม 1 ผืน, ซักแห้งสูท 1 ชุด">
                                     </div>
                                     <div class="col-md-12 d-none">
                                         <label class="form-label fw-bold small text-secondary">สรุปรายการ (ซ่อนไว้เพื่อส่งค่าไปยังฐานข้อมูล)</label>

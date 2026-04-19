@@ -20,7 +20,7 @@ $shop = $conn->query("SELECT * FROM shop LIMIT 1")->fetch_assoc();
 
 if (isset($_POST['submit_payment'])) {
     $date = date("Y-m-d H:i:s");
-    $amount = $order['order_sum'] + $order['order_shipping_fee'];
+    $amount = $order['order_sum'];
     
     // จัดการไฟล์รูปภาพสลิป
     $image = addslashes(file_get_contents($_FILES['payment_image']['tmp_name']));
@@ -54,17 +54,28 @@ if (isset($_POST['submit_payment'])) {
                     <hr>
                     
                     <div class="alert alert-info p-4 rounded-4 mb-4 shadow-sm">
+                        <?php 
+                        $shipping_fee = (float)($order['order_shipping_fee'] ?? 0);
+                        $extra_cash = (float)($order['order_extra_cash'] ?? 0);
+                        $laundry_fee = (float)$order['order_sum'] - $shipping_fee - $extra_cash;
+                        ?>
                         <div class="d-flex justify-content-between mb-2 small opacity-75">
                             <span>ค่าบริการซักอบรีด:</span>
-                            <span>฿<?= number_format($order['order_sum'], 2) ?></span>
+                            <span>฿<?= number_format($laundry_fee, 2) ?></span>
                         </div>
+                        <?php if($extra_cash > 0): ?>
+                        <div class="d-flex justify-content-between mb-2 small opacity-75">
+                            <span>ค่าบริการเพิ่มเติม:</span>
+                            <span>฿<?= number_format($extra_cash, 2) ?></span>
+                        </div>
+                        <?php endif; ?>
                         <div class="d-flex justify-content-between mb-2 small opacity-75 border-bottom pb-2">
                             <span>ค่าบริการจัดส่ง:</span>
-                            <span>฿<?= number_format($order['order_shipping_fee'], 2) ?></span>
+                            <span>฿<?= number_format($shipping_fee, 2) ?></span>
                         </div>
                         <div class="d-flex justify-content-between align-items-center mt-2">
                             <span class="fw-bold h5 mb-0">ยอดรวมที่ต้องชำระ:</span>
-                            <h2 class="fw-bold text-primary mb-0">฿<?= number_format($order['order_sum'] + $order['order_shipping_fee'], 2) ?></h2>
+                            <h2 class="fw-bold text-primary mb-0">฿<?= number_format($order['order_sum'], 2) ?></h2>
                         </div>
                     </div>
 

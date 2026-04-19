@@ -151,7 +151,7 @@ $extra_price_per_piece = (int)($shop_q['shop_extra_price'] ?? 10);
                                         <div class="d-flex gap-2 justify-content-center">
                                             <button type="button" class="btn btn-sm btn-primary rounded-pill px-3 shadow-sm" 
                                                     onclick="openDeductModal('<?= $m['m_id'] ?>', '<?= htmlspecialchars($m['m_name'].' '.$m['m_lastname']) ?>', <?= $data['quota'] ?>)">
-                                                <i class="fa fa-cut me-1"></i> หักผ้า
+                                                <i class="fa fa-cut me-1"></i> รอบถัดไป  
                                             </button>
                                             <a href="manage_orders.php?m_id=<?= $m['m_id'] ?>" class="btn btn-sm btn-outline-secondary rounded-pill px-3" title="ประวัติการซัก">
                                                 <i class="fa fa-history me-1"></i> ประวัติ
@@ -190,9 +190,12 @@ $extra_price_per_piece = (int)($shop_q['shop_extra_price'] ?? 10);
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow-lg" style="border-radius: 25px;">
                 <div class="modal-header border-0 pb-0">
-                    <h5 class="fw-bold"><i class="fa fa-cut text-primary me-2"></i>หักโควตาผ้าสมาชิก</h5>
+                    <h5 class="fw-bold"><i class="fa fa-cut text-primary me-2"></i>รอบซัก</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
+                <div class="badge bg-light text-dark border rounded-pill px-3">
+                                            <?= $data['pickups_used'] ?? 0 ?> / 4 ครั้ง
+                                        </div>
                 <div class="modal-body py-4">
                     <div class="text-center mb-4">
                         <div class="text-muted small">ชื่อสมาชิก</div>

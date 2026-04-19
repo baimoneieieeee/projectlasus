@@ -7,203 +7,301 @@ if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'owner') {
     exit;
 }
 
-// 1. สรุปรายได้รายวัน/รายเดือน
-$today = date('Y-m-d'); 
-$month = date('Y-m');
-$daily_income = $conn->query("SELECT SUM(IFNULL(order_sum, 0) + IFNULL(order_shipping_fee, 0)) as total FROM orders WHERE DATE(order_date) = '$today' AND order_status >= 3")->fetch_assoc()['total'] ?? 0;
-$monthly_income = $conn->query("SELECT SUM(IFNULL(order_sum, 0) + IFNULL(order_shipping_fee, 0)) as total FROM orders WHERE order_date LIKE '$month%' AND order_status >= 3")->fetch_assoc()['total'] ?? 0;
+$shop = $conn->query("SELECT * FROM shop LIMIT 1")->fetch_assoc();
 
-// 2. สถิติสถานะออเดอร์ (สำหรับทำ Donut Chart)
-// 0: รอรับผ้า, 1: รอจ่ายเงิน, 2: กำลังซัก/รีด, 3: เตรียมส่งคืน, 4: สำเร็จ
-$res_status = $conn->query("SELECT order_status, COUNT(*) as count FROM orders GROUP BY order_status");
-$status_data = [0,0,0,0,0];
-while($row = $res_status->fetch_assoc()) {
-    if(isset($status_data[$row['order_status']])) {
-        $status_data[$row['order_status']] = (int)$row['count'];
-    }
+// 1. จัดการการกรองวันที่
+$date_start = $_GET['start_date'] ?? date('Y-m-01'); 
+$date_end = $_GET['end_date'] ?? date('Y-m-d');    
+
+// 2. ดึงรายการเดินบัญชีละเอียด
+$sql_ledger = "SELECT o.*, m.m_name, m.m_lastname 
+               FROM orders o 
+               JOIN member m ON o.m_id = m.m_id 
+               WHERE DATE(o.order_date) BETWEEN '$date_start' AND '$date_end'
+               AND o.order_status >= 1
+               ORDER BY o.order_date DESC";
+$res_ledger = $conn->query($sql_ledger);
+
+// 3. คำนวณยอดสรุป
+$total_base = 0; $total_extra = 0; $total_shipping = 0; $total_grand = 0; $order_count = 0;
+$ledger_data = [];
+while($row = $res_ledger->fetch_assoc()) {
+    $shipping = (float)$row['order_shipping_fee'];
+    $extra = (float)$row['order_extra_cash'];
+    $net = (float)$row['order_sum'];
+    $base = $net - $shipping - $extra;
+    $total_base += $base; $total_extra += $extra; $total_shipping += $shipping; $total_grand += $net;
+    $order_count++;
+    $ledger_data[] = array_merge($row, ['base'=>$base, 'extra'=>$extra, 'shipping'=>$shipping]);
 }
-
-// 3. 5 อันดับบริการยอดนิยม
-$popular_services = $conn->query("SELECT s.service_name, SUM(i.item_amount) as qty 
-                                 FROM item i JOIN service s ON i.service_id = s.service_id 
-                                 GROUP BY i.service_id ORDER BY qty DESC LIMIT 5");
-
-// 4. รายชื่อลูกค้าที่ใช้บริการบ่อย
-$top_customers = $conn->query("SELECT m.m_name, m.m_lastname, COUNT(o.order_id) as orders 
-                               FROM orders o JOIN member m ON o.m_id = m.m_id 
-                               GROUP BY o.m_id ORDER BY orders DESC LIMIT 5");
 ?>
 <!doctype html>
 <html lang="th">
 <head>
     <meta charset="utf-8">
-    <title>รายงานสรุปผล - Laundry System</title>
+    <title>Accounting Dashboard - <?= htmlspecialchars($shop['shop_name1']) ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600;700&display=swap');
-        :root { --primary: #3B82F6; --bg: #F8FAFC; }
-        body { background: var(--bg); font-family: 'Chakra Petch', sans-serif; }
-        .main-content { margin-left: 280px; padding: 40px; }
-        .report-card { border: none; border-radius: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); background: white; }
-        .icon-shape { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; }
-        .list-group-item { border: none; padding: 12px 0; }
-        @media (max-width: 991px) { .main-content { margin-left: 0; padding: 80px 20px 20px 20px; } }
-        @media print { .sidebar, .no-print { display: none !important; } .main-content { margin-left: 0; padding: 0; } }
+        @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600;700&family=Sarabun:wght@300;400;600;700&display=swap');
+        :root { 
+            --primary: #4f46e5; --secondary: #64748b; --success: #10b981; 
+            --danger: #ef4444; --warning: #f59e0b; --bg: #f8fafc;
+        }
+        body { background: var(--bg); font-family: 'Sarabun', sans-serif; color: #1e293b; }
+        .main-content { margin-left: 280px; padding: 40px; transition: 0.3s; }
+        
+        /* Dashboard Styling */
+        .glass-card { 
+            background: white; border: none; border-radius: 24px; 
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.04), 0 4px 6px -2px rgba(0,0,0,0.02);
+            transition: all 0.3s ease; border: 1px solid rgba(255,255,255,0.8);
+        }
+        .glass-card:hover { transform: translateY(-5px); box-shadow: 0 20px 25px -5px rgba(0,0,0,0.06); }
+        
+        .stat-icon {
+            width: 56px; height: 56px; border-radius: 18px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem; margin-bottom: 15px;
+        }
+        
+        .btn-modern {
+            padding: 12px 28px; border-radius: 16px; font-weight: 700;
+            letter-spacing: 0.5px; transition: 0.3s; border: none;
+        }
+        .btn-modern:hover { transform: scale(1.02); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+
+        /* Table Styling */
+        .custom-table { border-collapse: separate; border-spacing: 0 12px; margin-top: -12px; }
+        .custom-table thead th { 
+            background: transparent; border: none; color: var(--secondary);
+            font-size: 0.75rem; text-transform: uppercase; font-weight: 800; padding: 15px 20px;
+        }
+        .custom-table tbody tr { 
+            background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.02); 
+            border-radius: 16px; transition: 0.2s;
+        }
+        .custom-table tbody tr:hover { transform: scale(1.005); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05); }
+        .custom-table td { border: none; padding: 20px; vertical-align: middle; }
+        .custom-table td:first-child { border-radius: 16px 0 0 16px; }
+        .custom-table td:last-child { border-radius: 0 16px 16px 0; }
+
+        .money-text { font-family: 'Chakra Petch', sans-serif; font-weight: 700; }
+        
+        @media (max-width: 991px) { .main-content { margin-left: 0; padding: 20px; } }
+        
+        @media print {
+            .no-print { display: none !important; }
+            .main-content { margin-left: 0 !important; padding: 0 !important; }
+            .glass-card { box-shadow: none !important; border: 1px solid #eee !important; }
+            body { background: white; }
+            .print-header { display: block !important; }
+        }
+        .print-header { display: none; padding: 40px; border-bottom: 2px solid #333; margin-bottom: 40px; }
     </style>
 </head>
 <body>
-    <?php include 'sidebar.php'; ?>
+    <div class="no-print"><?php include 'sidebar.php'; ?></div>
 
     <div class="main-content">
-        <div class="d-flex justify-content-between align-items-center mb-5">
+        <!-- Print Header -->
+        <div class="print-header">
+            <div class="row align-items-center">
+                <div class="col-8">
+                    <h1 class="fw-bold text-primary mb-1"><?= htmlspecialchars($shop['shop_name1']) ?></h1>
+                    <p class="mb-0 text-muted"><?= htmlspecialchars($shop['shop_address']) ?></p>
+                    <p class="small text-muted">โทร: <?= $shop['shop_tel'] ?></p>
+                </div>
+                <div class="col-4 text-end">
+                    <h3 class="fw-bold">รายงานสรุปรายรับ</h3>
+                    <p class="mb-0"><?= date('d/m/Y', strtotime($date_start)) ?> - <?= date('d/m/Y', strtotime($date_end)) ?></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard Header -->
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-5 no-print">
             <div>
-                <h2 class="fw-bold mb-1">📈 รายงานสรุปผลประมวลผล</h2>
-                <p class="text-muted mb-0">ข้อมูลล่าสุด ณ วันที่ <?= date('d/m/Y H:i') ?></p>
+                <h2 class="fw-bold text-dark mb-1" style="font-family: 'Chakra Petch';">Accounting Dashboard</h2>
+                <p class="text-secondary mb-0">ยินดีต้อนรับกลับมา, ตรวจสอบรายได้ของร้านวันนี้</p>
             </div>
-            <button onclick="window.print()" class="btn btn-dark rounded-pill px-4 no-print shadow-sm">
-                <i class="fa fa-print me-2"></i> พิมพ์รายงานสรุป
-            </button>
+            <div class="d-flex gap-3 mt-3 mt-md-0">
+                <button onclick="window.print()" class="btn btn-white glass-card px-4 py-2 fw-bold text-dark">
+                    <i class="fa fa-print me-2"></i> พิมพ์รายงาน
+                </button>
+                <a href="reports.php" class="btn btn-primary btn-modern shadow-sm">
+                    <i class="fa fa-sync me-2"></i> รีเฟรชข้อมูล
+                </a>
+            </div>
         </div>
 
-        <!-- ยอดขายสรุป -->
+        <!-- Filters -->
+        <div class="glass-card p-4 mb-5 no-print">
+            <form method="get" class="row g-4 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold text-secondary uppercase">ช่วงวันที่เริ่มต้น</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-0 rounded-start-4"><i class="fa fa-calendar text-primary"></i></span>
+                        <input type="date" name="start_date" class="form-control bg-light border-0 rounded-end-4 py-2" value="<?= $date_start ?>">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small fw-bold text-secondary uppercase">จนถึงวันที่</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-0 rounded-start-4"><i class="fa fa-calendar-check text-primary"></i></span>
+                        <input type="date" name="end_date" class="form-control bg-light border-0 rounded-end-4 py-2" value="<?= $date_end ?>">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <button type="submit" class="btn btn-dark w-100 btn-modern">
+                        <i class="fa fa-filter me-2"></i> กรองข้อมูลอย่างละเอียด
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Summary Widgets -->
         <div class="row g-4 mb-5">
-            <div class="col-md-4">
-                <div class="card report-card p-4 border-start border-primary border-5">
-                    <div class="d-flex align-items-center">
-                        <div class="icon-shape bg-primary text-white me-3"><i class="fa fa-hand-holding-dollar fs-4"></i></div>
-                        <div>
-                            <p class="text-muted small mb-0">รายได้วันนี้</p>
-                            <h3 class="fw-bold mb-0 text-primary">฿<?= number_format($daily_income, 2) ?></h3>
-                        </div>
-                    </div>
+            <div class="col-xl-3 col-sm-6">
+                <div class="glass-card p-4">
+                    <div class="stat-icon bg-primary bg-opacity-10 text-primary"><i class="fa fa-shirt"></i></div>
+                    <div class="text-secondary small fw-bold mb-1">ค่าซักรีดรวม (Base)</div>
+                    <div class="h3 fw-bold money-text mb-0">฿<?= number_format($total_base, 2) ?></div>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="card report-card p-4 border-start border-success border-5">
-                    <div class="d-flex align-items-center">
-                        <div class="icon-shape bg-success text-white me-3"><i class="fa fa-calendar-check fs-4"></i></div>
-                        <div>
-                            <p class="text-muted small mb-0">รายได้เดือนนี้</p>
-                            <h3 class="fw-bold mb-0 text-success">฿<?= number_format($monthly_income, 2) ?></h3>
-                        </div>
-                    </div>
+            <div class="col-xl-3 col-sm-6">
+                <div class="glass-card p-4">
+                    <div class="stat-icon bg-danger bg-opacity-10 text-danger"><i class="fa fa-plus-circle"></i></div>
+                    <div class="text-secondary small fw-bold mb-1">ยอดบวกเพิ่ม (Extra)</div>
+                    <div class="h3 fw-bold money-text mb-0">฿<?= number_format($total_extra, 2) ?></div>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="card report-card p-4 border-start border-warning border-5">
-                    <div class="d-flex align-items-center">
-                        <div class="icon-shape bg-warning text-dark me-3"><i class="fa fa-users fs-4"></i></div>
-                        <div>
-                            <p class="text-muted small mb-0">ลูกค้าทั้งหมด</p>
-                            <h3 class="fw-bold mb-0"><?= $conn->query("SELECT COUNT(*) FROM member")->fetch_row()[0] ?> <small class="fs-6 text-muted">ราย</small></h3>
-                        </div>
-                    </div>
+            <div class="col-xl-3 col-sm-6">
+                <div class="glass-card p-4">
+                    <div class="stat-icon bg-success bg-opacity-10 text-success"><i class="fa fa-truck"></i></div>
+                    <div class="text-secondary small fw-bold mb-1">ค่าจัดส่งรวม (Shipping)</div>
+                    <div class="h3 fw-bold money-text mb-0">฿<?= number_format($total_shipping, 2) ?></div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-sm-6">
+                <div class="glass-card p-4 bg-primary text-white">
+                    <div class="stat-icon bg-white bg-opacity-20 text-white"><i class="fa fa-wallet"></i></div>
+                    <div class="text-white text-opacity-75 small fw-bold mb-1">รายรับสุทธิ (Total)</div>
+                    <div class="h3 fw-bold money-text mb-0">฿<?= number_format($total_grand, 2) ?></div>
                 </div>
             </div>
         </div>
 
-        <div class="row g-4 mb-5">
-            <!-- กราฟสถานะออเดอร์ -->
-            <div class="col-lg-7">
-                <div class="card report-card p-4 h-100">
-                    <h5 class="fw-bold mb-4 text-dark"><i class="fa fa-chart-pie me-2 text-primary"></i> สัดส่วนสถานะงานซักอบรีด</h5>
-                    <div style="height: 350px;" class="d-flex align-items-center justify-content-center">
-                        <canvas id="statusChart"></canvas>
-                    </div>
-                </div>
-            </div>
-
-            <!-- บริการยอดนิยม -->
-            <div class="col-lg-5">
-                <div class="card report-card p-4 h-100">
-                    <h5 class="fw-bold mb-4 text-dark"><i class="fa fa-star me-2 text-warning"></i> 5 อันดับบริการยอดนิยม</h5>
-                    <div class="list-group list-group-flush">
-                        <?php if($popular_services->num_rows > 0): ?>
-                            <?php while($s = $popular_services->fetch_assoc()): ?>
-                                <div class="list-group-item d-flex justify-content-between align-items-center border-bottom border-light">
-                                    <div><i class="fa fa-shirt me-2 text-primary opacity-50"></i> <?= htmlspecialchars($s['service_name']) ?></div>
-                                    <span class="badge bg-primary bg-opacity-10 text-primary rounded-pill px-3"><?= number_format($s['qty']) ?> ชิ้น</span>
-                                </div>
-                            <?php endwhile; ?>
-                        <?php else: ?>
-                            <p class="text-center py-5 text-muted small">ยังไม่มีข้อมูลการใช้บริการ</p>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
+        <!-- Ledger Table -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h4 class="fw-bold mb-0" style="font-family: 'Chakra Petch';">รายการลูกค้า</h4>
+            <span class="badge bg-white text-dark shadow-sm rounded-pill px-3 py-2 border">พบออเดอร์ทั้งหมด <?= $order_count ?> รายการ</span>
         </div>
 
-        <div class="row g-4">
-            <!-- ลูกค้าดีเด่น -->
-            <div class="col-12">
-                <div class="card report-card p-4">
-                    <h5 class="fw-bold mb-4 text-dark"><i class="fa fa-crown me-2 text-warning"></i> ลูกค้าที่ใช้บริการบ่อยที่สุด</h5>
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle">
-                            <thead class="table-light">
-                                <tr>
-                                    <th class="ps-4">ชื่อ-นามสกุล</th>
-                                    <th class="text-center">จำนวนครั้งที่ใช้บริการ</th>
-                                    <th class="text-end pe-4">สถานะ</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if($top_customers->num_rows > 0): ?>
-                                    <?php while($tc = $top_customers->fetch_assoc()): ?>
-                                    <tr>
-                                        <td class="ps-4">
-                                            <div class="d-flex align-items-center">
-                                                <img src="https://ui-avatars.com/api/?name=<?= urlencode($tc['m_name']) ?>&background=random" class="rounded-circle me-3" width="35">
-                                                <div class="fw-bold"><?= htmlspecialchars($tc['m_name'].' '.$tc['m_lastname']) ?></div>
-                                            </div>
-                                        </td>
-                                        <td class="text-center fw-bold text-primary"><?= number_format($tc['orders']) ?> ครั้ง</td>
-                                        <td class="text-end pe-4"><span class="badge bg-success bg-opacity-10 text-success rounded-pill px-3">Active Customer</span></td>
-                                    </tr>
-                                    <?php endwhile; ?>
-                                <?php else: ?>
-                                    <tr><td colspan="3" class="text-center py-4 text-muted">ยังไม่มีข้อมูลลูกค้า</td></tr>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+        <div class="table-responsive">
+            <table class="table custom-table">
+                <thead>
+                    <tr>
+                        <th>วัน/เวลา</th>
+                        <th>รหัส/ประเภท</th>
+                        <th>ชื่อลูกค้า</th>
+                        <th class="text-end">ค่าบริการ</th>
+                        <th class="text-end">บวกเพิ่ม</th>
+                        <th class="text-end">ค่าส่ง</th>
+                        <th class="text-end">ยอดรวมสุทธิ</th>
+                        <th class="text-center no-print">จัดการ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach($ledger_data as $row): 
+                        $is_pkg = (strpos($row['order_id'], 'PKG')===0);
+                    ?>
+                    <tr>
+                        <td class="small text-secondary">
+                            <div class="fw-bold text-dark"><?= date('d M Y', strtotime($row['order_date'])) ?></div>
+                            <div><?= date('H:i', strtotime($row['order_date'])) ?> น.</div>
+                        </td>
+                        <td>
+                            <div class="fw-bold text-primary">#<?= $row['order_id'] ?></div>
+                            <span class="badge <?= $is_pkg ? 'bg-indigo text-indigo' : 'bg-slate text-slate' ?> bg-opacity-10 smaller" style="font-size: 0.6rem;">
+                                <?= $is_pkg ? 'MEMBERSHIP' : 'REGULAR' ?>
+                            </span>
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <img src="https://ui-avatars.com/api/?name=<?= urlencode($row['m_name']) ?>&background=random&size=32" class="rounded-circle me-2">
+                                <div class="fw-bold"><?= htmlspecialchars($row['m_name'].' '.$row['m_lastname']) ?></div>
+                            </div>
+                        </td>
+                        <td class="text-end money-text text-secondary">฿<?= number_format($row['base'], 2) ?></td>
+                        <td class="text-end money-text text-danger">฿<?= number_format($row['extra'], 2) ?></td>
+                        <td class="text-end money-text text-success">฿<?= number_format($row['shipping'], 2) ?></td>
+                        <td class="text-end money-text fw-bold fs-5 text-dark">฿<?= number_format($row['order_sum'], 2) ?></td>
+                        <td class="text-center no-print">
+                            <button class="btn btn-light rounded-circle p-2" onclick="viewHistory('<?= $row['m_id'] ?>', '<?= htmlspecialchars($row['m_name']) ?>')">
+                                <i class="fa fa-ellipsis-v text-secondary"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Footer signatures for print -->
+        <div class="row mt-5 d-none d-print-flex text-center small">
+            <div class="col-4">
+                <div style="height: 80px; border-bottom: 1px solid #ccc; width: 180px; margin: auto;"></div>
+                <div class="mt-3 fw-bold">ผู้รวบรวมบัญชี</div>
+            </div>
+            <div class="col-4">
+                <div style="height: 80px; border-bottom: 1px solid #ccc; width: 180px; margin: auto;"></div>
+                <div class="mt-3 fw-bold">ผู้ตรวจสอบ</div>
+            </div>
+            <div class="col-4">
+                <div style="height: 80px; border-bottom: 1px solid #ccc; width: 180px; margin: auto;"></div>
+                <div class="mt-3 fw-bold">ผู้อนุมัติรายรับ</div>
             </div>
         </div>
     </div>
 
+    <!-- Modal -->
+    <div class="modal fade no-print" id="historyModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content glass-card overflow-hidden">
+                <div class="modal-header border-0 p-4">
+                    <h5 class="fw-bold mb-0" id="historyTitle">รายละเอียดบิล</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-0 bg-light bg-opacity-50" id="historyBody"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        const ctx = document.getElementById('statusChart').getContext('2d');
-        new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: ['รอรับผ้า', 'รอจ่ายเงิน', 'กำลังซัก/รีด', 'เตรียมส่งคืน', 'สำเร็จ'],
-                datasets: [{
-                    data: <?= json_encode($status_data) ?>,
-                    backgroundColor: ['#64748B', '#F59E0B', '#06B6D4', '#3B82F6', '#10B981'],
-                    borderWidth: 5,
-                    borderColor: '#ffffff',
-                    hoverOffset: 20
-                }]
-            },
-            options: { 
-                cutout: '70%', 
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { 
-                    legend: { 
-                        position: 'bottom',
-                        labels: {
-                            padding: 20,
-                            usePointStyle: true,
-                            font: { family: 'Chakra Petch', size: 12 }
-                        }
-                    } 
-                } 
+        function viewHistory(m_id, name) {
+            document.getElementById('historyTitle').innerHTML = '<i class="fa fa-user-circle me-2 text-primary"></i> ประวัติคุณ ' + name;
+            const modal = new bootstrap.Modal(document.getElementById('historyModal'));
+            modal.show();
+            fetch('get_member_history.php?m_id=' + m_id).then(r => r.text()).then(h => { document.getElementById('historyBody').innerHTML = h; });
+        }
+
+        function printOfficialReceipt(divId) {
+            const printContents = document.getElementById(divId).innerHTML;
+            let iframe = document.getElementById('printFrame');
+            if (!iframe) {
+                iframe = document.createElement('iframe');
+                iframe.id = 'printFrame';
+                iframe.style.display = 'none';
+                document.body.appendChild(iframe);
             }
-        });
+            const doc = iframe.contentWindow.document;
+            doc.open();
+            doc.write('<html><head><title>Receipt</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"><style>@import url("https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;700&display=swap"); body { font-family: "Sarabun", sans-serif; padding: 40px; } .table-dark { background-color: #343a40 !important; color: #fff !important; -webkit-print-color-adjust: exact; } .table-light { background-color: #f8f9fa !important; -webkit-print-color-adjust: exact; } h4, h3 { color: #4f46e5 !important; -webkit-print-color-adjust: exact; } @media print { body { padding: 0; } }</style></head><body>' + printContents + '</body></html>');
+            doc.close();
+            setTimeout(() => { iframe.contentWindow.focus(); iframe.contentWindow.print(); }, 500);
+        }
     </script>
 </body>
 </html>

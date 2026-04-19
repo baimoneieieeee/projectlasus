@@ -81,9 +81,10 @@ if (isset($_POST['confirm_request'])) {
         $order_status = $is_pkg ? 0 : 1;
         $order_note = $is_pkg ? $rq_note : "";
         $est_pickup = $conn->real_escape_string($_POST['est_pickup'] ?? '');
+        $final_initial_sum = $initial_sum + $shipping_fee;
 
         $conn->query("INSERT INTO orders (order_id, m_id, rq_id, order_date, order_status, order_sum, order_shipping_fee, order_note, order_pickup_round, order_address, order_est_pickup) 
-                      VALUES ('$order_id', '$m_id', '$rq_id', '$date', '$order_status', '$initial_sum', '$shipping_fee', '$order_note', '$round_num', '$address', '$est_pickup')");
+                      VALUES ('$order_id', '$m_id', '$rq_id', '$date', '$order_status', '$final_initial_sum', '$shipping_fee', '$order_note', '$round_num', '$address', '$est_pickup')");
         
         $conn->commit();
         header("Location: manage_orders.php");

@@ -160,7 +160,7 @@ $res_orders = $conn->query($sql_orders);
                                     }
                                     ?>
                                 </td>
-                                <td class="fw-bold text-dark">฿<?= number_format($o['order_sum'] + $o['order_shipping_fee'], 2) ?></td>
+                                <td class="fw-bold text-dark">฿<?= number_format($o['order_sum'], 2) ?></td>
                                 <td class="text-center">
                                     <div class="d-flex justify-content-center gap-2">
                                         <a href="order_process.php?id=<?= $o['order_id'] ?>" class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm">
