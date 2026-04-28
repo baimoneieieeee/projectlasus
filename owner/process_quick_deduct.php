@@ -11,6 +11,7 @@ if (isset($_POST['m_id'])) {
     $amount = (int)$_POST['amount'];
     $extra_cash = (float)($_POST['extra_cash'] ?? 0);
     $extra_note = $conn->real_escape_string($_POST['extra_note'] ?? '');
+    $owner_note = $conn->real_escape_string($_POST['owner_note'] ?? '');
     
     // 🧺 จัดการรายการผ้าแยกย่อย
     $item_names = $_POST['item_names'] ?? [];
@@ -48,17 +49,18 @@ if (isset($_POST['m_id'])) {
     }
 
     // 2. สร้างออเดอร์
-    $sql_order = "INSERT INTO orders (order_id, m_id, order_date, order_status, order_items_count, order_note, order_sum, order_extra_note, order_extra_cash, order_pickup_round) 
-                  VALUES ('$order_id', '$m_id', '$date', $status, $amount, '$note', $extra_cash, '$extra_note', $extra_cash, $next_round)";
+    $sql_order = "INSERT INTO orders (order_id, m_id, order_date, order_status, order_items_count, order_note, order_sum, order_extra_note, order_extra_cash, order_pickup_round, order_owner_note) 
+                  VALUES ('$order_id', '$m_id', '$date', $status, $amount, '$note', $extra_cash, '$extra_note', $extra_cash, $next_round, '$owner_note')";
     
     if ($conn->query($sql_order)) {
-        // 3. บันทึกรายการลงตาราง item
+        // 🧺 3. บันทึกรายการลงตาราง item
         $id_base = substr($order_id, 3);
         foreach ($items_to_save as $idx => $item) {
             $itm_id = $id_base . sprintf("%03d", $idx + 1);
-            $conn->query("INSERT INTO item (item_id, order_id, service_id, item_amount) VALUES ('$itm_id', '$order_id', 'SRV1771999730', {$item['qty']})");
+            $it_name = $conn->real_escape_string($item['name']);
+            $conn->query("INSERT INTO item (item_id, order_id, item_name, service_id, item_amount) 
+                          VALUES ('$itm_id', '$order_id', '$it_name', 'SRV1771999730', {$item['qty']})");
         }
-
         // 4. หักโควตาใน JSON
         if (isset($monthly_data[$m_id])) {
             $monthly_data[$m_id]['quota'] -= $amount;

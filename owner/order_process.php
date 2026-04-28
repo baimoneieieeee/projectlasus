@@ -89,6 +89,18 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
 
     <div class="main-content">
         <div class="container-fluid">
+            <!-- 🔔 แจ้งเตือนเมื่อบันทึกสำเร็จ -->
+            <?php if(isset($_GET['success'])): ?>
+                <div class="alert alert-success border-0 shadow-sm rounded-4 mb-4 d-flex align-items-center">
+                    <i class="fa fa-check-circle fa-2x me-3"></i>
+                    <div>
+                        <div class="fw-bold">บันทึกสำเร็จ!</div>
+                        <div class="small">ระบบได้บันทึกข้อมูลรายการผ้าและยอดเงินเรียบร้อยแล้ว</div>
+                    </div>
+                    <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <div>
                     <h2 class="fw-bold mb-1">📦 จัดการออเดอร์ #<?= $order_id ?></h2>
@@ -232,7 +244,11 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
                         <?php endif; ?>
 
                         <!-- ฟอร์มบันทึก (จะถูกพับไว้ถ้ามีข้อมูลแล้ว) -->
-                        <div class="collapse <?= ($order['order_items_count'] == 0) ? 'show' : '' ?> mb-4" id="editForm">
+                        <?php 
+                        // ตรวจสอบว่าเคยมีการบันทึกข้อมูลไปหรือยัง
+                        $has_data = (!empty($order['order_note']) || $order['order_items_count'] > 0 || $order['order_extra_cash'] > 0);
+                        ?>
+                        <div class="collapse <?= (!$has_data) ? 'show' : '' ?> mb-4" id="editForm">
                             <form method="post" action="deduct_monthly.php" class="p-4 rounded-4 border bg-light shadow-sm">
                                 <input type="hidden" name="order_id" value="<?= $order_id ?>">
                                 <input type="hidden" name="m_id" value="<?= $order['m_id'] ?>">
@@ -450,6 +466,14 @@ $shop = $conn->query($shop_sql)->fetch_assoc();
                                         <?php if(!empty($order['order_extra_note'])): ?>
                                             <div class="mt-2 p-2 bg-danger bg-opacity-10 rounded text-danger small">
                                                 <i class="fa fa-info-circle me-1"></i> <b>บริการที่คิดเงินเพิ่ม:</b> <?= htmlspecialchars($order['order_extra_note']) ?>
+                                            </div>
+                                        <?php endif; ?>
+
+                                        <!-- 🚚 แสดงเวลานัดส่งคืน / หมายเหตุร้านค้า -->
+                                        <?php if(!empty($order['order_owner_note'])): ?>
+                                            <div class="mt-3 p-3 bg-warning bg-opacity-10 rounded-4 border-start border-warning border-4 text-dark shadow-sm">
+                                                <div class="info-label text-warning mb-1"><i class="fa fa-clock me-1"></i> เวลานัดส่งคืน / หมายเหตุจากร้านค้า:</div>
+                                                <div class="fw-bold fs-6"><?= nl2br(htmlspecialchars($order['order_owner_note'])) ?></div>
                                             </div>
                                         <?php endif; ?>
                                     </div>

@@ -129,22 +129,27 @@ if (isset($_POST['use_quota'])) {
             if (!empty($items_to_save)) {
                 foreach ($items_to_save as $idx => $item) {
                     $itm_id = $id_base . sprintf("%03d", $idx + 1);
-                    $conn->query("INSERT INTO item (item_id, order_id, service_id, item_amount) VALUES ('$itm_id', '$order_id', 'SRV1771999730', {$item['qty']})");
+                    $it_name = $conn->real_escape_string($item['name']);
+                    $conn->query("INSERT INTO item (item_id, order_id, item_name, service_id, item_amount) VALUES ('$itm_id', '$order_id', '$it_name', 'SRV1771999730', {$item['qty']})");
                 }
             } else if($quota_deduct > 0 || $base_price > 0) {
                 // กรณีไม่ได้กรอกแยกย่อยมา ให้บันทึกเป็นก้อนเดียวเหมือนเดิม
                 $item_id_main = $id_base . "001";
                 $qty = ($quota_deduct > 0) ? $quota_deduct : 1;
-                $conn->query("INSERT INTO item (item_id, order_id, service_id, item_amount) VALUES ('$item_id_main', '$order_id', 'SRV1771999730', $qty)");
+                $conn->query("INSERT INTO item (item_id, order_id, item_name, service_id, item_amount) VALUES ('$item_id_main', '$order_id', 'งานซักทั่วไป', 'SRV1771999730', $qty)");
             }
 
             // รายการบวกเพิ่ม
             if($extra_cash > 0) {
                 $item_id_extra = $id_base . "999"; // ใช้ 999 เพื่อไม่ให้ซ้ำกับรายการปกติ
                 $srv_id = 'SRV1772000644'; // ผ้านวม
-                if(strpos($extra_note, 'ชุดราชการ') !== false) $srv_id = 'SRV1772000615';
+                $it_extra_name = 'บริการบวกเพิ่ม';
+                if(strpos($extra_note, 'ชุดราชการ') !== false) {
+                    $srv_id = 'SRV1772000615';
+                    $it_extra_name = 'ชุดราชการ';
+                }
                 
-                $conn->query("INSERT INTO item (item_id, order_id, service_id, item_amount) VALUES ('$item_id_extra', '$order_id', '$srv_id', 1)");
+                $conn->query("INSERT INTO item (item_id, order_id, item_name, service_id, item_amount) VALUES ('$item_id_extra', '$order_id', '$it_extra_name', '$srv_id', 1)");
             }
 
             header("Location: order_process.php?id=$order_id");

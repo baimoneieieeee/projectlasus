@@ -81,10 +81,11 @@ if (isset($_POST['confirm_request'])) {
         $order_status = $is_pkg ? 0 : 1;
         $order_note = $is_pkg ? $rq_note : "";
         $est_pickup = $conn->real_escape_string($_POST['est_pickup'] ?? '');
+        $est_delivery = $conn->real_escape_string($_POST['est_delivery'] ?? ''); // เพิ่มใหม่
         $final_initial_sum = $initial_sum + $shipping_fee;
 
-        $conn->query("INSERT INTO orders (order_id, m_id, rq_id, order_date, order_status, order_sum, order_shipping_fee, order_note, order_pickup_round, order_address, order_est_pickup) 
-                      VALUES ('$order_id', '$m_id', '$rq_id', '$date', '$order_status', '$final_initial_sum', '$shipping_fee', '$order_note', '$round_num', '$address', '$est_pickup')");
+        $conn->query("INSERT INTO orders (order_id, m_id, rq_id, order_date, order_status, order_sum, order_shipping_fee, order_note, order_pickup_round, order_address, order_est_pickup, order_owner_note) 
+                      VALUES ('$order_id', '$m_id', '$rq_id', '$date', '$order_status', '$final_initial_sum', '$shipping_fee', '$order_note', '$round_num', '$address', '$est_pickup', '$est_delivery')");
         
         $conn->commit();
         header("Location: manage_orders.php");
@@ -213,8 +214,15 @@ $rate_standard = (float)($shop_info['shop_rate'] ?? 0);
                                 <input type="hidden" name="rq_id" value="<?= $rq['rq_id'] ?>">
                                 <input type="hidden" name="m_id" value="<?= $rq['m_id'] ?>">
                                 <div class="mb-2">
-                                    <input type="text" name="est_pickup" class="form-control form-control-sm rounded-pill px-3" placeholder="ระบุเวลาไปรับผ้า (เช่น 14:00 - 15:00)">
+                                    <label class="form-label smaller fw-bold text-muted mb-1"><i class="fa fa-clock me-1"></i> เวลานัดรับผ้า</label>
+                                    <input type="text" name="est_pickup" class="form-control form-control-sm rounded-pill px-3" placeholder="เช่น วันนี้ 14:00 น.">
                                 </div>
+                                <?php if(!$is_membership): // 🚩 โชว์เวลาส่งเฉพาะงานซักปกติ ไม่โชว์ตอนสมัครสมาชิก ?>
+                                <div class="mb-3">
+                                    <label class="form-label smaller fw-bold text-muted mb-1"><i class="fa fa-paper-plane me-1"></i> เวลานัดส่งคืน</label>
+                                    <input type="text" name="est_delivery" class="form-control form-control-sm rounded-pill px-3" placeholder="เช่น พรุ่งนี้ 10:00 น.">
+                                </div>
+                                <?php endif; ?>
                                 <button type="submit" name="confirm_request" class="btn btn-primary w-100 rounded-pill fw-bold py-2 shadow-sm">
                                     <i class="fa fa-check me-1"></i> ยืนยันรับเรื่อง
                                 </button>

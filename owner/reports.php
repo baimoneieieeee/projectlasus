@@ -13,7 +13,31 @@ $shop = $conn->query("SELECT * FROM shop LIMIT 1")->fetch_assoc();
 $date_start = $_GET['start_date'] ?? date('Y-m-01'); 
 $date_end = $_GET['end_date'] ?? date('Y-m-d');    
 
-// 2. ดึงรายการเดินบัญชีละเอียด
+// 1.1 จัดการการบันทึกค่าใช้จ่าย
+if (isset($_POST['add_expense'])) {
+    $exp_name = $conn->real_escape_string($_POST['exp_name']);
+    $exp_amount = (float)$_POST['exp_amount'];
+    $exp_date = $_POST['exp_date'] ?: date('Y-m-d H:i:s');
+    $exp_note = $conn->real_escape_string($_POST['exp_note'] ?? '');
+    
+    // บันทึกลงตาราง payment โดยระบุ payment_type = 1 (รายจ่าย)
+    $sql_add = "INSERT INTO payment (payment_name, payment_amount, payment_date, payment_note, payment_type) 
+                VALUES ('$exp_name', $exp_amount, '$exp_date', '$exp_note', 1)";
+    $conn->query($sql_add);
+    header("Location: reports.php?start_date=$date_start&end_date=$date_end");
+    exit;
+}
+
+// 1.2 ลบค่าใช้จ่าย
+if (isset($_GET['del_exp'])) {
+    $exp_id = (int)$_GET['del_exp'];
+    // ลบจากตาราง payment โดยต้องเป็นรายจ่าย (type=1) เท่านั้นเพื่อความปลอดภัย
+    $conn->query("DELETE FROM payment WHERE payment_id = $exp_id AND payment_type = 1");
+    header("Location: reports.php?start_date=$date_start&end_date=$date_end");
+    exit;
+}
+
+// 2. ดึงรายการเดินบัญชีละเอียด (ออเดอร์)
 $sql_ledger = "SELECT o.*, m.m_name, m.m_lastname 
                FROM orders o 
                JOIN member m ON o.m_id = m.m_id 
@@ -22,18 +46,37 @@ $sql_ledger = "SELECT o.*, m.m_name, m.m_lastname
                ORDER BY o.order_date DESC";
 $res_ledger = $conn->query($sql_ledger);
 
-// 3. คำนวณยอดสรุป
+// 2.1 ดึงรายการค่าใช้จ่าย จากตาราง payment (type=1)
+$sql_exp = "SELECT payment_id as exp_id, payment_name as exp_name, payment_amount as exp_amount, 
+                   payment_date as exp_date, payment_note as exp_note 
+            FROM payment 
+            WHERE payment_type = 1 
+            AND DATE(payment_date) BETWEEN '$date_start' AND '$date_end'
+            ORDER BY payment_date DESC";
+$res_exp = $conn->query($sql_exp);
+
+// 3. คำนวณยอดสรุป (รายรับ)
 $total_base = 0; $total_extra = 0; $total_shipping = 0; $total_grand = 0; $order_count = 0;
 $ledger_data = [];
 while($row = $res_ledger->fetch_assoc()) {
-    $shipping = (float)$row['order_shipping_fee'];
-    $extra = (float)$row['order_extra_cash'];
+    $shipping = (float)($row['order_shipping_fee'] ?? 0);
+    $extra = (float)($row['order_extra_cash'] ?? 0);
     $net = (float)$row['order_sum'];
     $base = $net - $shipping - $extra;
     $total_base += $base; $total_extra += $extra; $total_shipping += $shipping; $total_grand += $net;
     $order_count++;
     $ledger_data[] = array_merge($row, ['base'=>$base, 'extra'=>$extra, 'shipping'=>$shipping]);
 }
+
+// 4. คำนวณยอดสรุป (ค่าใช้จ่าย)
+$total_expense = 0;
+$expense_data = [];
+while($row = $res_exp->fetch_assoc()) {
+    $total_expense += (float)$row['exp_amount'];
+    $expense_data[] = $row;
+}
+
+$net_profit = $total_grand - $total_expense;
 ?>
 <!doctype html>
 <html lang="th">
@@ -91,11 +134,36 @@ while($row = $res_ledger->fetch_assoc()) {
         @media (max-width: 991px) { .main-content { margin-left: 0; padding: 20px; } }
         
         @media print {
+            @page { size: A4; margin: 1.5cm; }
             .no-print { display: none !important; }
-            .main-content { margin-left: 0 !important; padding: 0 !important; }
-            .glass-card { box-shadow: none !important; border: 1px solid #eee !important; }
-            body { background: white; }
-            .print-header { display: block !important; }
+            .main-content { margin-left: 0 !important; padding: 0 !important; width: 100% !important; }
+            body { background: white !important; font-size: 10pt !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .glass-card { 
+                box-shadow: none !important; 
+                border: 1px solid #ddd !important; 
+                border-radius: 10px !important; 
+                padding: 15px !important;
+                margin-bottom: 10px !important;
+                background-color: #fff !important;
+            }
+            .stat-icon { display: none !important; } /* ซ่อนไอคอนตอนพิมพ์เพื่อประหยัดหมึกและพื้นที่ */
+            .print-header { display: block !important; border-bottom: 3px solid #000 !important; margin-bottom: 30px !important; padding: 0 0 20px 0 !important; }
+            
+            /* บังคับให้การ์ดสรุปผลเรียง 4 คอลัมน์ */
+            .row.g-4 { display: flex !important; flex-wrap: nowrap !important; margin: 0 -5px !important; }
+            .col-xl-3 { width: 25% !important; padding: 0 5px !important; flex: 0 0 auto !important; }
+            
+            .h3 { font-size: 1.2rem !important; }
+            .h4 { font-size: 1.1rem !important; }
+            
+            /* ปรับตารางให้ดูเป็นทางการ */
+            .custom-table { border-spacing: 0 !important; width: 100% !important; border: 1px solid #eee !important; }
+            .custom-table tbody tr { background: transparent !important; box-shadow: none !important; border-bottom: 1px solid #eee !important; }
+            .custom-table td, .custom-table th { padding: 8px 10px !important; border: 1px solid #eee !important; border-radius: 0 !important; }
+            .money-text { font-size: 11pt !important; }
+            
+            .text-primary, .text-danger, .text-success { color: black !important; } /* พิมพ์ขาวดำชัดๆ หรือจะคงสีไว้ก็ได้ */
+            .bg-dark { background-color: #f8f9fa !important; color: black !important; border: 1px solid #000 !important; }
         }
         .print-header { display: none; padding: 40px; border-bottom: 2px solid #333; margin-bottom: 40px; }
     </style>
@@ -113,7 +181,7 @@ while($row = $res_ledger->fetch_assoc()) {
                     <p class="small text-muted">โทร: <?= $shop['shop_tel'] ?></p>
                 </div>
                 <div class="col-4 text-end">
-                    <h3 class="fw-bold">รายงานสรุปรายรับ</h3>
+                    <h3 class="fw-bold">รายงานสรุปรายได้-ค่าใช้จ่าย</h3>
                     <p class="mb-0"><?= date('d/m/Y', strtotime($date_start)) ?> - <?= date('d/m/Y', strtotime($date_end)) ?></p>
                 </div>
             </div>
@@ -163,39 +231,62 @@ while($row = $res_ledger->fetch_assoc()) {
         <!-- Summary Widgets -->
         <div class="row g-4 mb-5">
             <div class="col-xl-3 col-sm-6">
-                <div class="glass-card p-4">
-                    <div class="stat-icon bg-primary bg-opacity-10 text-primary"><i class="fa fa-shirt"></i></div>
-                    <div class="text-secondary small fw-bold mb-1">ค่าซักรีดรวม (Base)</div>
-                    <div class="h3 fw-bold money-text mb-0">฿<?= number_format($total_base, 2) ?></div>
+                <div class="glass-card p-4 border-start border-primary border-5">
+                    <div class="stat-icon bg-primary bg-opacity-10 text-primary"><i class="fa fa-shopping-cart"></i></div>
+                    <div class="text-secondary small fw-bold mb-1">จำนวนออเดอร์</div>
+                    <div class="h3 fw-bold money-text mb-0"><?= number_format($order_count) ?> <span class="fs-6 fw-normal">รายการ</span></div>
                 </div>
             </div>
             <div class="col-xl-3 col-sm-6">
-                <div class="glass-card p-4">
-                    <div class="stat-icon bg-danger bg-opacity-10 text-danger"><i class="fa fa-plus-circle"></i></div>
-                    <div class="text-secondary small fw-bold mb-1">ยอดบวกเพิ่ม (Extra)</div>
-                    <div class="h3 fw-bold money-text mb-0">฿<?= number_format($total_extra, 2) ?></div>
+                <div class="glass-card p-4 border-start border-success border-5">
+                    <div class="stat-icon bg-success bg-opacity-10 text-success"><i class="fa fa-wallet"></i></div>
+                    <div class="text-secondary small fw-bold mb-1">รายได้รวม (Revenue)</div>
+                    <div class="h3 fw-bold money-text mb-0 text-success">฿<?= number_format($total_grand, 2) ?></div>
                 </div>
             </div>
             <div class="col-xl-3 col-sm-6">
-                <div class="glass-card p-4">
-                    <div class="stat-icon bg-success bg-opacity-10 text-success"><i class="fa fa-truck"></i></div>
-                    <div class="text-secondary small fw-bold mb-1">ค่าจัดส่งรวม (Shipping)</div>
-                    <div class="h3 fw-bold money-text mb-0">฿<?= number_format($total_shipping, 2) ?></div>
+                <div class="glass-card p-4 border-start border-danger border-5">
+                    <div class="stat-icon bg-danger bg-opacity-10 text-danger"><i class="fa fa-minus-circle"></i></div>
+                    <div class="text-secondary small fw-bold mb-1">ค่าใช้จ่ายรวม (Expenses)</div>
+                    <div class="h3 fw-bold money-text mb-0 text-danger">฿<?= number_format($total_expense, 2) ?></div>
                 </div>
             </div>
             <div class="col-xl-3 col-sm-6">
-                <div class="glass-card p-4 bg-primary text-white">
-                    <div class="stat-icon bg-white bg-opacity-20 text-white"><i class="fa fa-wallet"></i></div>
-                    <div class="text-white text-opacity-75 small fw-bold mb-1">รายรับสุทธิ (Total)</div>
-                    <div class="h3 fw-bold money-text mb-0">฿<?= number_format($total_grand, 2) ?></div>
+                <div class="glass-card p-4 bg-dark text-white shadow-lg">
+                    <div class="stat-icon bg-white bg-opacity-20 text-white"><i class="fa fa-chart-line"></i></div>
+                    <div class="text-white text-opacity-75 small fw-bold mb-1">กำไรสุทธิ (Net Profit)</div>
+                    <div class="h3 fw-bold money-text mb-0">฿<?= number_format($net_profit, 2) ?></div>
                 </div>
             </div>
         </div>
 
-        <!-- Ledger Table -->
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h4 class="fw-bold mb-0" style="font-family: 'Chakra Petch';">รายการลูกค้า</h4>
-            <span class="badge bg-white text-dark shadow-sm rounded-pill px-3 py-2 border">พบออเดอร์ทั้งหมด <?= $order_count ?> รายการ</span>
+        <div class="row g-4 mb-5 no-print">
+             <div class="col-xl-4 col-sm-6">
+                <div class="glass-card p-3">
+                    <div class="text-secondary small fw-bold mb-1">ค่าซักรีดรวม (Base)</div>
+                    <div class="h5 fw-bold money-text mb-0">฿<?= number_format($total_base, 2) ?></div>
+                </div>
+            </div>
+            <div class="col-xl-4 col-sm-6">
+                <div class="glass-card p-3">
+                    <div class="text-secondary small fw-bold mb-1">ยอดบวกเพิ่มรวม (Extra)</div>
+                    <div class="h5 fw-bold money-text mb-0">฿<?= number_format($total_extra, 2) ?></div>
+                </div>
+            </div>
+            <div class="col-xl-4 col-sm-6">
+                <div class="glass-card p-3">
+                    <div class="text-secondary small fw-bold mb-1">ค่าจัดส่งรวม (Shipping)</div>
+                    <div class="h5 fw-bold money-text mb-0">฿<?= number_format($total_shipping, 2) ?></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Expense Table Section -->
+        <div class="d-flex justify-content-between align-items-center mb-4 mt-5">
+            <h4 class="fw-bold mb-0" style="font-family: 'Chakra Petch';">รายการค่าใช้จ่าย (Expenses)</h4>
+            <button class="btn btn-danger btn-modern no-print" data-bs-toggle="modal" data-bs-target="#expenseModal">
+                <i class="fa fa-plus me-2"></i> เพิ่มค่าใช้จ่าย
+            </button>
         </div>
 
         <div class="table-responsive">
@@ -203,43 +294,96 @@ while($row = $res_ledger->fetch_assoc()) {
                 <thead>
                     <tr>
                         <th>วัน/เวลา</th>
-                        <th>รหัส/ประเภท</th>
-                        <th>ชื่อลูกค้า</th>
-                        <th class="text-end">ค่าบริการ</th>
-                        <th class="text-end">บวกเพิ่ม</th>
-                        <th class="text-end">ค่าส่ง</th>
-                        <th class="text-end">ยอดรวมสุทธิ</th>
+                        <th>รายการ</th>
+                        <th>หมายเหตุ</th>
+                        <th class="text-end">จำนวนเงิน</th>
                         <th class="text-center no-print">จัดการ</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach($ledger_data as $row): 
+                    <?php if (empty($expense_data)): ?>
+                        <tr><td colspan="5" class="text-center py-5 text-muted small">ไม่พบรายการค่าใช้จ่ายในช่วงเวลานี้</td></tr>
+                    <?php endif; ?>
+                    <?php foreach($expense_data as $exp): ?>
+                    <tr>
+                        <td class="small text-secondary">
+                            <div class="fw-bold text-dark"><?= date('d M Y', strtotime($exp['exp_date'])) ?></div>
+                            <div><?= date('H:i', strtotime($exp['exp_date'])) ?> น.</div>
+                        </td>
+                        <td><div class="fw-bold"><?= htmlspecialchars($exp['exp_name']) ?></div></td>
+                        <td class="small text-secondary"><?= htmlspecialchars($exp['exp_note']) ?></td>
+                        <td class="text-end money-text text-danger fw-bold fs-5">฿<?= number_format($exp['exp_amount'], 2) ?></td>
+                        <td class="text-center no-print">
+                            <a href="?start_date=<?= $date_start ?>&end_date=<?= $date_end ?>&del_exp=<?= $exp['exp_id'] ?>" 
+                               class="btn btn-light rounded-circle p-2 text-danger" onclick="return confirm('ยืนยันการลบค่าใช้จ่ายนี้?')">
+                                <i class="fa fa-trash"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Ledger Table -->
+        <div class="d-flex justify-content-between align-items-center mb-4 mt-5">
+            <h4 class="fw-bold mb-0" style="font-family: 'Chakra Petch';">รายการลูกค้า (Revenue)</h4>
+            <span class="badge bg-white text-dark shadow-sm rounded-pill px-3 py-2 border">พบออเดอร์ทั้งหมด <?= $order_count ?> รายการ</span>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table custom-table">
+                <thead>
+                    <tr>
+                        <th class="text-center">ลำดับ</th>
+                        <th>วันที่รับงาน</th>
+                        <th>วันที่ส่งคืน</th>
+                        <th>รหัสบิล</th>
+                        <th>ชื่อลูกค้า</th>
+                        <th>ประเภทงาน</th>
+                        <th class="text-end">ค่าบริการหลัก</th>
+                        <th class="text-end">บวกเพิ่ม</th>
+                        <th class="text-end">ค่าจัดส่ง</th>
+                        <th class="text-end">ยอดรวมสุทธิ</th>
+                        <th class="text-center no-print">รายละเอียด</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php 
+                    $i = 1;
+                    foreach($ledger_data as $row): 
                         $is_pkg = (strpos($row['order_id'], 'PKG')===0);
                     ?>
                     <tr>
-                        <td class="small text-secondary">
-                            <div class="fw-bold text-dark"><?= date('d M Y', strtotime($row['order_date'])) ?></div>
-                            <div><?= date('H:i', strtotime($row['order_date'])) ?> น.</div>
+                        <td class="text-center text-secondary small"><?= $i++ ?></td>
+                        <td class="small">
+                            <div class="fw-bold"><?= date('d/m/Y', strtotime($row['order_date'])) ?></div>
+                            <div class="smaller text-muted"><?= date('H:i', strtotime($row['order_date'])) ?></div>
+                        </td>
+                        <td class="small">
+                            <?php if ($row['order_date_return'] && $row['order_date_return'] != '0000-00-00 00:00:00'): ?>
+                                <div class="fw-bold"><?= date('d/m/Y', strtotime($row['order_date_return'])) ?></div>
+                                <div class="smaller text-muted"><?= date('H:i', strtotime($row['order_date_return'])) ?></div>
+                            <?php else: ?>
+                                <span class="text-muted">-</span>
+                            <?php endif; ?>
+                        </td>
+                        <td><div class="fw-bold text-primary">#<?= $row['order_id'] ?></div></td>
+                        <td>
+                            <div class="fw-bold"><?= htmlspecialchars($row['m_name'].' '.$row['m_lastname']) ?></div>
                         </td>
                         <td>
-                            <div class="fw-bold text-primary">#<?= $row['order_id'] ?></div>
-                            <span class="badge <?= $is_pkg ? 'bg-indigo text-indigo' : 'bg-slate text-slate' ?> bg-opacity-10 smaller" style="font-size: 0.6rem;">
-                                <?= $is_pkg ? 'MEMBERSHIP' : 'REGULAR' ?>
+                            <span class="badge <?= $is_pkg ? 'bg-primary' : 'bg-secondary' ?> bg-opacity-10 <?= $is_pkg ? 'text-primary' : 'text-secondary' ?> smaller" style="font-size: 0.65rem;">
+                                <?= $is_pkg ? 'แพ็กเกจรายเดือน' : 'งานซักทั่วไป' ?>
                             </span>
                         </td>
-                        <td>
-                            <div class="d-flex align-items-center">
-                                <img src="https://ui-avatars.com/api/?name=<?= urlencode($row['m_name']) ?>&background=random&size=32" class="rounded-circle me-2">
-                                <div class="fw-bold"><?= htmlspecialchars($row['m_name'].' '.$row['m_lastname']) ?></div>
-                            </div>
-                        </td>
-                        <td class="text-end money-text text-secondary">฿<?= number_format($row['base'], 2) ?></td>
-                        <td class="text-end money-text text-danger">฿<?= number_format($row['extra'], 2) ?></td>
-                        <td class="text-end money-text text-success">฿<?= number_format($row['shipping'], 2) ?></td>
-                        <td class="text-end money-text fw-bold fs-5 text-dark">฿<?= number_format($row['order_sum'], 2) ?></td>
+                        <td class="text-end money-text small text-secondary">฿<?= number_format($row['base'], 2) ?></td>
+                        <td class="text-end money-text small text-danger">฿<?= number_format($row['extra'], 2) ?></td>
+                        <td class="text-end money-text small text-success">฿<?= number_format($row['shipping'], 2) ?></td>
+                        <td class="text-end money-text fw-bold text-dark">฿<?= number_format($row['order_sum'], 2) ?></td>
                         <td class="text-center no-print">
                             <button class="btn btn-light rounded-circle p-2" onclick="viewHistory('<?= $row['m_id'] ?>', '<?= htmlspecialchars($row['m_name']) ?>')">
-                                <i class="fa fa-ellipsis-v text-secondary"></i>
+                                <i class="fa fa-search text-secondary"></i>
                             </button>
                         </td>
                     </tr>
@@ -261,6 +405,42 @@ while($row = $res_ledger->fetch_assoc()) {
             <div class="col-4">
                 <div style="height: 80px; border-bottom: 1px solid #ccc; width: 180px; margin: auto;"></div>
                 <div class="mt-3 fw-bold">ผู้อนุมัติรายรับ</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Expense Modal -->
+    <div class="modal fade no-print" id="expenseModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content glass-card overflow-hidden">
+                <form method="post">
+                    <div class="modal-header border-0 p-4">
+                        <h5 class="fw-bold mb-0"><i class="fa fa-plus-circle me-2 text-danger"></i> บันทึกค่าใช้จ่ายใหม่</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body p-4 bg-light bg-opacity-50">
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">ชื่อรายการค่าใช้จ่าย</label>
+                            <input type="text" name="exp_name" class="form-control rounded-4 border-0 shadow-sm" placeholder="เช่น ค่าผงซักฟอก, ค่าน้ำ, ค่าไฟ" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">จำนวนเงิน (บาท)</label>
+                            <input type="number" step="0.01" name="exp_amount" class="form-control rounded-4 border-0 shadow-sm" placeholder="0.00" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">วันที่จ่าย (ปล่อยว่างถ้าเป็นปัจจุบัน)</label>
+                            <input type="datetime-local" name="exp_date" class="form-control rounded-4 border-0 shadow-sm">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">หมายเหตุ (ถ้ามี)</label>
+                            <textarea name="exp_note" class="form-control rounded-4 border-0 shadow-sm" rows="3"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 p-4 pt-0 bg-light bg-opacity-50">
+                        <button type="button" class="btn btn-white fw-bold rounded-pill px-4" data-bs-dismiss="modal">ยกเลิก</button>
+                        <button type="submit" name="add_expense" class="btn btn-danger fw-bold rounded-pill px-4">บันทึกรายการ</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
