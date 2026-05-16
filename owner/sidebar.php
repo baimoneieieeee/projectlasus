@@ -114,6 +114,9 @@ $shop_name = $shop_info['shop_name1'] ?? 'Laundry Admin';
         <a class="nav-link <?= ($current_page == 'manage_monthly.php') ? 'active' : '' ?>" href="manage_monthly.php">
             <i class="fa-solid fa-star"></i> จัดการรายเดือน
         </a>
+        <a class="nav-link <?= ($current_page == 'manage_monthly_plans.php') ? 'active' : '' ?>" href="manage_monthly_plans.php">
+            <i class="fa-solid fa-box-archive"></i> จัดการแพ็กเกจ
+        </a>
         <a class="nav-link <?= ($current_page == 'quick_order.php') ? 'active' : '' ?>" href="quick_order.php">
             <i class="fa-solid fa-plus-circle"></i> เปิดบิลซักด่วน
         </a>

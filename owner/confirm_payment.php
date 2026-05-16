@@ -33,12 +33,16 @@ if ($order) {
 
         if ($is_pkg) {
             // --- 🚩 กรณีสมัครสมาชิกใหม่ (PKG) ---
-            preg_match('/MONTHLY_PACKAGE_(\d+)/', $order['order_note'], $matches);
-            $quota_to_add = isset($matches[1]) ? (int)$matches[1] : 80;
+            // หมายเหตุเดิมจาก monthly_plans.php: "สมัครแพ็กเกจ: $pkg_name ($quota ชิ้น) ราคา $price บาท"
+            preg_match('/\(([\d,]+) ชิ้น\)/', $order['order_note'], $matches);
+            $quota_to_add = isset($matches[1]) ? (int)str_replace(',', '', $matches[1]) : 80;
 
             if (!isset($monthly_data[$m_id])) {
-                $monthly_data[$m_id] = ['quota' => 0, 'updated_at' => '', 'pickups_used' => 0];
+                $monthly_data[$m_id] = ['quota' => 0, 'updated_at' => '', 'pickups_used' => 0, 'total_quota' => 0];
             }
+            // เก็บยอดโควตาตั้งต้นไว้คำนวณ
+            $monthly_data[$m_id]['total_quota'] = $quota_to_add;
+            
             // เพิ่มโควตาใหม่ - หักจำนวนที่ส่งซักมาพร้อมกัน
             $monthly_data[$m_id]['quota'] += ($quota_to_add - $items_to_deduct);
             $p_used = ($items_to_deduct > 0) ? 1 : 0;
@@ -51,32 +55,8 @@ if ($order) {
                 $conn->query("UPDATE orders SET order_pickup_round = 1 WHERE order_id = '$order_id'");
             }
 
-            } else {
-                // --- 🚩 กรณีออเดอร์ปกติของสมาชิกรายเดือน ---
-                if (isset($monthly_data[$m_id])) {
-                    // 🚨 สำคัญ: ต้องเป็นออเดอร์ที่มีการหักผ้า (items > 0) ถึงจะนับเป็นรอบสมาชิก (Round)
-                    if ($items_to_deduct > 0) {
-                        $current_round = (int)($monthly_data[$m_id]['pickups_used'] ?? 0);
-                        
-                        // รีเซ็ตรอบถ้าครบ 4 แล้ว (เริ่มเดือนใหม่) หรือเพิ่มทีละ 1
-                        $next_round = ($current_round >= 4) ? 1 : $current_round + 1;
-                        
-                        // หักโควตาผ้า
-                        $monthly_data[$m_id]['quota'] -= $items_to_deduct;
-                        
-                        // บันทึกรอบลงในตาราง orders เพื่อให้ลูกค้าเห็นในกิจกรรมสมาชิก
-                        $conn->query("UPDATE orders SET order_pickup_round = $next_round WHERE order_id = '$order_id'");
-                        
-                        // อัปเดตจำนวนครั้งที่มารับผ้าใน JSON
-                        $monthly_data[$m_id]['pickups_used'] = $next_round;
-                        $monthly_data[$m_id]['updated_at'] = date("Y-m-d H:i:s");
-                        file_put_contents($json_file, json_encode($monthly_data, JSON_PRETTY_PRINT));
-                    } else {
-                        // 💰 กรณีจ่ายเงินสด (รายครั้ง) แม้จะเป็นสมาชิกรายเดือน แต่ถ้าหักผ้าเป็น 0 ไม่ต้องนับรอบ
-                        $conn->query("UPDATE orders SET order_pickup_round = 0 WHERE order_id = '$order_id'");
-                    }
-                }
-            }
+        }
+        // 🚨 ลบส่วน else ของออเดอร์ปกติออก เพราะเราหักยอดไปแล้วใน deduct_monthly.php
 
         header("Location: order_process.php?id=$order_id");
         exit;

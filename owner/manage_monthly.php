@@ -11,7 +11,7 @@ if (!isset($_SESSION['user']) || $_SESSION['role'] !== 'owner') {
 $json_file = __DIR__ . '/../config/monthly_data.json';
 $monthly_data = file_exists($json_file) ? json_decode(file_get_contents($json_file), true) : [];
 
-// --- 🗑️ ฟังก์ชันลบสมาชิก (เผื่อกรณีแอดมินต้องการลบคนออกเอง) ---
+// --- 🗑️ ฟังก์ชันลบสมาชิก ---
 if (isset($_GET['remove_member'])) {
     $mid = $_GET['remove_member'];
     if (isset($monthly_data[$mid])) {
@@ -22,7 +22,12 @@ if (isset($_GET['remove_member'])) {
     }
 }
 
-// --- 🚩 ดึงข้อมูลคนสมัคร PKG แต่ยังไม่กดยืนยัน ---
+// ดึงรายการบริการหมวดรายเดือนมาเตรียมไว้
+$res_services = $conn->query("SELECT s.* FROM service s JOIN service_type t ON s.svType_id = t.svType_id WHERE t.svType_behavior = 'monthly' AND s.service_quota = 0 ORDER BY s.service_name ASC");
+$services_list = [];
+while($s = $res_services->fetch_assoc()) { $services_list[] = $s; }
+
+// ดึงข้อมูลคนสมัคร PKG
 $sql_pending_pkg = "SELECT o.*, m.m_name, m.m_lastname, m.m_tel 
                     FROM orders o 
                     JOIN member m ON o.m_id = m.m_id 
@@ -30,7 +35,6 @@ $sql_pending_pkg = "SELECT o.*, m.m_name, m.m_lastname, m.m_tel
                     ORDER BY o.order_date DESC";
 $res_pending = $conn->query($sql_pending_pkg);
 
-// ดึงราคาซักเกินจากฐานข้อมูล
 $shop_q = $conn->query("SELECT shop_extra_price FROM shop LIMIT 1")->fetch_assoc();
 $extra_price_per_piece = (int)($shop_q['shop_extra_price'] ?? 10);
 ?>
@@ -39,7 +43,7 @@ $extra_price_per_piece = (int)($shop_q['shop_extra_price'] ?? 10);
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>จัดการสมาชิกรรายเดือน - Laundry</title>
+    <title>จัดการสมาชิกรายเดือน - Laundry</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <style>
@@ -49,6 +53,7 @@ $extra_price_per_piece = (int)($shop_q['shop_extra_price'] ?? 10);
         .main-content { margin-left: 280px; padding: 40px; }
         .card-custom { border: none; border-radius: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); background: white; }
         .quota-badge { font-size: 1.1rem; font-weight: 700; color: #2563eb; }
+        .item-row-select { background: #f8fafc; border-radius: 12px; padding: 10px; margin-bottom: 8px; border: 1px solid #e2e8f0; }
         @media (max-width: 991px) { .main-content { margin-left: 0; padding: 20px; } }
     </style>
 </head>
@@ -57,44 +62,25 @@ $extra_price_per_piece = (int)($shop_q['shop_extra_price'] ?? 10);
 
     <div class="main-content">
         <div class="container-fluid">
-            <!-- 🚩 ส่วนสมาชิกใหม่ที่รอเปิดสิทธิ์ -->
+            <!-- สมาชิกใหม่รอเปิดสิทธิ์ -->
             <?php if($res_pending && $res_pending->num_rows > 0): ?>
             <div class="mb-5">
-                <h5 class="fw-bold text-danger mb-3 small uppercase"><i class="fa fa-clock me-2"></i> รอเปิดสิทธิ์สมาชิกใหม่ (ค้างจ่าย/รอตรวจสลิป)</h5>
-                <div class="card card-custom p-4 border-start border-danger border-4">
+                <h5 class="fw-bold text-danger mb-3 small uppercase"><i class="fa fa-clock me-2"></i> รอเปิดสิทธิ์สมาชิกใหม่</h5>
+                <div class="card card-custom p-4 border-start border-danger border-4 shadow-sm">
                     <div class="table-responsive">
                         <table class="table table-hover align-middle mb-0">
-                            <thead class="table-light">
-                                <tr class="smaller">
-                                    <th>เลขออเดอร์</th>
-                                    <th>ชื่อลูกค้า</th>
-                                    <th>แพ็กเกจ</th>
-                                    <th class="text-end">ยอดเงิน</th>
-                                    <th class="text-center">จัดการ</th>
-                                </tr>
-                            </thead>
                             <tbody>
                                 <?php while($p = $res_pending->fetch_assoc()): ?>
                                 <tr>
                                     <td class="fw-bold text-danger small"><?= $p['order_id'] ?></td>
                                     <td>
                                         <div class="fw-bold small"><?= htmlspecialchars($p['m_name'].' '.$p['m_lastname']) ?></div>
-                                        <div class="smaller text-muted"><i class="fa fa-phone me-1 small"></i> <?= $p['m_tel'] ?></div>
+                                        <div class="smaller text-muted"><?= $p['m_tel'] ?></div>
                                     </td>
-                                    <td>
-                                        <div class="small fw-bold text-dark">
-                                            <?php 
-                                            preg_match('/MONTHLY_PACKAGE_(\d+)/', $p['order_note'], $matches);
-                                            echo "เหมาซัก " . ($matches[1] ?? '80') . " ชิ้น";
-                                            ?>
-                                        </div>
-                                        <div class="smaller text-muted"><?= date('d/m/y H:i', strtotime($p['order_date'])) ?></div>
-                                    </td>
-                                    <td class="text-end fw-bold text-dark small">฿<?= number_format($p['order_sum'], 2) ?></td>
+                                    <td><div class="badge bg-danger bg-opacity-10 text-danger rounded-pill px-3">รอชำระเงิน/ตรวจสลิป</div></td>
+                                    <td class="text-end fw-bold">฿<?= number_format($p['order_sum'], 2) ?></td>
                                     <td class="text-center">
-                                        <a href="order_process.php?id=<?= $p['order_id'] ?>" class="btn btn-sm btn-danger rounded-pill px-3 shadow-sm">
-                                            <i class="fa fa-wallet me-1"></i> จัดการสลิป
-                                        </a>
+                                        <a href="order_process.php?id=<?= $p['order_id'] ?>" class="btn btn-sm btn-danger rounded-pill px-3 shadow-sm">จัดการสลิป</a>
                                     </td>
                                 </tr>
                                 <?php endwhile; ?>
@@ -106,20 +92,20 @@ $extra_price_per_piece = (int)($shop_q['shop_extra_price'] ?? 10);
             <?php endif; ?>
 
             <div class="d-flex justify-content-between align-items-center mb-4">
-                <h5 class="fw-bold mb-0 text-primary small uppercase"><i class="fa fa-sync-alt me-2"></i> สมาชิกรรายเดือน (กำลังใช้งาน)</h5>
+                <h5 class="fw-bold mb-0 text-primary small uppercase"><i class="fa fa-sync-alt me-2"></i> สมาชิกรายเดือน (Active)</h5>
                 <a href="quick_order.php" class="btn btn-primary rounded-pill px-4 shadow-sm fw-bold">
                     <i class="fa fa-plus-circle me-2"></i> เปิดบิลซักสมาชิก
                 </a>
             </div>
 
-            <div class="card card-custom p-4 mb-5 shadow-sm">
+            <div class="card card-custom p-4 shadow-sm">
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
                         <thead class="table-light">
                             <tr>
                                 <th class="ps-4">ชื่อสมาชิก</th>
-                                <th class="text-center">โควตาผ้าที่เหลือ</th>
-                                <th class="text-center">รอบรับส่ง (ครั้งนี้)</th>
+                                <th class="text-center">โควตาเหลือ</th>
+                                <th class="text-center">รอบถัดไป</th>
                                 <th>อัปเดตล่าสุด</th>
                                 <th class="text-center">จัดการ</th>
                             </tr>
@@ -127,122 +113,96 @@ $extra_price_per_piece = (int)($shop_q['shop_extra_price'] ?? 10);
                         <tbody>
                             <?php 
                             $has_active = false;
-                            if(!empty($monthly_data)):
-                                foreach($monthly_data as $mid => $data):
-                                    // โชว์เฉพาะคนที่ยังใช้ไม่ครบ 4 รอบ
-                                    if(($data['pickups_used'] ?? 0) >= 4) continue;
-                                    
-                                    $m_info = $conn->query("SELECT m_name, m_lastname, m_tel FROM member WHERE m_id = '$mid'")->fetch_assoc();
-                                    if(!$m_info) continue;
-                                    $has_active = true;
-                                ?>
-                                <tr>
-                                    <td class="ps-4">
-                                        <div class="fw-bold text-dark"><?= htmlspecialchars($m_info['m_name'].' '.$m_info['m_lastname']) ?></div>
-                                        <div class="small text-muted"><i class="fa fa-phone me-1 small"></i> <?= $m_info['m_tel'] ?></div>
-                                    </td>
-                                    <td class="text-center">
-                                        <span class="quota-badge"><?= $data['quota'] ?></span>
-                                        <div class="smaller text-muted" style="font-size: 0.7rem;">จากโควตาสมัคร</div>
-                                    </td>
-                                    <td class="text-center">
-                                        <div class="badge bg-light text-dark border rounded-pill px-3">
-                                            <?= $data['pickups_used'] ?? 0 ?> / 4 ครั้ง
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div class="small text-muted"><?= date('d/m/y H:i', strtotime($data['updated_at'])) ?></div>
-                                    </td>
-                                    <td class="text-center">
-                                        <div class="d-flex gap-2 justify-content-center">
-                                            <button type="button" class="btn btn-sm btn-primary rounded-pill px-3 shadow-sm" 
-                                                    onclick="openDeductModal('<?= $mid ?>', '<?= htmlspecialchars($m_info['m_name'].' '.$m_info['m_lastname']) ?>', <?= $data['quota'] ?>, <?= ($data['pickups_used'] ?? 0) + 1 ?>)">
-                                                <i class="fa fa-cut me-1"></i> บันทึกรอบที่ <?= ($data['pickups_used'] ?? 0) + 1 ?>
-                                            </button>
-                                            <a href="manage_orders.php?m_id=<?= $mid ?>" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
-                                                <i class="fa fa-history me-1"></i> ประวัติ
-                                            </a>
-                                            <a href="?remove_member=<?= $mid ?>" class="btn btn-sm btn-outline-danger border-0 rounded-circle" onclick="return confirm('ลบสมาชิกออกจากรายการ?')">
-                                                <i class="fa fa-times"></i>
-                                            </a>
-                                        </div>
-                                    </td>
-                                </tr>
-                                <?php endforeach; ?>
-                            <?php endif; 
+                            foreach($monthly_data as $mid => $data):
+                                if(($data['pickups_used'] ?? 0) >= 4) continue;
+                                $m_info = $conn->query("SELECT m_name, m_lastname, m_tel FROM member WHERE m_id = '$mid'")->fetch_assoc();
+                                if(!$m_info) continue;
+                                $has_active = true;
+                            ?>
+                            <tr>
+                                <td class="ps-4">
+                                    <div class="fw-bold text-dark"><?= htmlspecialchars($m_info['m_name'].' '.$m_info['m_lastname']) ?></div>
+                                    <div class="small text-muted"><?= $m_info['m_tel'] ?></div>
+                                </td>
+                                <td class="text-center"><span class="quota-badge"><?= $data['quota'] ?></span></td>
+                                <td class="text-center">
+                                    <div class="badge bg-light text-primary border border-primary border-opacity-10 rounded-pill px-3">
+                                        ครั้งที่ <?= ($data['pickups_used'] ?? 0) + 1 ?> / 4
+                                    </div>
+                                </td>
+                                <td class="small text-muted"><?= date('d/m/y H:i', strtotime($data['updated_at'])) ?></td>
+                                <td class="text-center">
+                                    <button class="btn btn-sm btn-primary rounded-pill px-3 shadow-sm fw-bold" 
+                                            onclick="openDeductModal('<?= $mid ?>', '<?= htmlspecialchars($m_info['m_name'].' '.$m_info['m_lastname']) ?>', <?= $data['quota'] ?>, <?= ($data['pickups_used'] ?? 0) + 1 ?>)">
+                                        <i class="fa fa-cut me-1"></i> บันทึกงาน
+                                    </button>
+                                    <a href="manage_orders.php?m_id=<?= $mid ?>" class="btn btn-sm btn-light border rounded-circle ms-1"><i class="fa fa-history text-muted"></i></a>
+                                </td>
+                            </tr>
+                            <?php endforeach; 
                             if(!$has_active): ?>
-                                <tr><td colspan="5" class="text-center py-5 text-muted small">ไม่มีสมาชิกที่กำลังใช้งานในขณะนี้</td></tr>
+                                <tr><td colspan="5" class="text-center py-5 text-muted">ไม่มีสมาชิกกำลังใช้งานในขณะนี้</td></tr>
                             <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
             </div>
-
-            <!-- สรุปสถิติ -->
-            <div class="row g-3">
-                <div class="col-md-3">
-                    <div class="card card-custom p-3 bg-white border-0 shadow-sm">
-                        <div class="small fw-bold text-muted mb-1 uppercase" style="font-size: 0.65rem;">จำนวนสมาชิกรายเดือนรวม</div>
-                        <h4 class="fw-bold mb-0 text-primary"><?= count($monthly_data) ?> คน</h4>
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 
-    <!-- 🟢 Modal หักผ้าด่วน -->
-    <div class="modal fade" id="deductModal" tabindex="-1" aria-hidden="true">
+    <!-- 🟢 Modal บันทึกงานสมาชิก (เลือกจากเมนูบริการ) -->
+    <div class="modal fade" id="deductModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow-lg" style="border-radius: 25px;">
                 <div class="modal-header border-0 pb-0">
-                    <h5 class="fw-bold"><i class="fa fa-cut text-primary me-2"></i>บันทึกการทำงาน <span id="modal_round_text" class="text-primary"></span></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <h5 class="fw-bold"><i class="fa fa-cut text-primary me-2"></i>บันทึกการซักรายเดือน</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body py-4">
-                    <div class="text-center mb-4">
-                        <div class="text-muted small">ชื่อสมาชิก</div>
-                        <div class="fw-bold fs-5 text-dark" id="modal_m_name">-</div>
-                        <div class="badge bg-primary bg-opacity-10 text-primary mt-1">โควตาปัจจุบัน: <span id="modal_m_quota">0</span> ชิ้น</div>
+                    <div class="text-center mb-4 p-3 bg-light rounded-4">
+                        <div class="fw-bold fs-5" id="modal_m_name">-</div>
+                        <div class="badge bg-primary rounded-pill mt-1">โควตาปัจจุบัน: <span id="modal_m_quota">0</span> ชิ้น</div>
+                        <div class="text-muted smaller mt-1" id="modal_round_text"></div>
                     </div>
                     <form id="deductForm">
                         <input type="hidden" name="m_id" id="modal_m_id">
                         
-                        <div class="mb-3">
+                        <div class="mb-4">
                             <div class="d-flex justify-content-between align-items-center mb-2">
-                                <label class="form-label small fw-bold text-primary mb-0"><i class="fa fa-list me-1"></i> รายการผ้าที่ส่ง</label>
-                                <button type="button" class="btn btn-sm btn-outline-primary rounded-pill border-0" onclick="addItemRow()">
-                                    <i class="fa fa-plus-circle me-1"></i> เพิ่มรายการ
+                                <label class="form-label small fw-bold text-primary mb-0">รายการที่นำมาส่ง</label>
+                                <button type="button" class="btn btn-sm btn-outline-primary border-0 fw-bold" onclick="addItemRow()">
+                                    <i class="fa fa-plus-circle me-1"></i> เพิ่มช่อง
                                 </button>
                             </div>
-                            <div id="item_list_container" class="bg-light p-2 rounded-4 border border-light"></div>
+                            <div id="item_list_container"></div>
                         </div>
 
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold text-secondary">จำนวนผ้าที่ซักรวม (ชิ้น)</label>
-                            <input type="number" name="amount" id="deduct_amount" class="form-control form-control-lg text-center fw-bold border-0 bg-light" style="border-radius: 15px;" min="1" readonly required>
-                            <div id="quota_warning" class="mt-2 p-2 bg-danger bg-opacity-10 text-danger rounded-3 smaller d-none">
-                                <i class="fa fa-exclamation-triangle me-1"></i> เกินโควตาไป <span id="over_count">0</span> ชิ้น (แนะนำเรียกเก็บเพิ่ม <span id="suggest_extra">0</span> บาท)
+                        <div class="p-3 bg-primary bg-opacity-10 rounded-4 text-center mb-3">
+                            <div class="text-primary small fw-bold mb-1">จำนวนชิ้นที่หักรวม</div>
+                            <input type="number" name="amount" id="deduct_amount" class="form-control text-center fw-bold border-0 bg-transparent fs-2" value="0" readonly required>
+                            <div id="quota_warning" class="mt-2 text-danger smaller fw-bold d-none">
+                                <i class="fa fa-exclamation-triangle"></i> เกินโควตาไป <span id="over_count">0</span> ชิ้น!
                             </div>
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label small fw-bold text-primary"><i class="fa fa-clock me-1"></i> เวลานัดส่งคืน / หมายเหตุจากร้านค้า</label>
-                            <input type="text" name="owner_note" class="form-control border-0 bg-light" style="border-radius: 12px;" placeholder="เช่น วันศุกร์ 17:00 น.">
+                            <label class="form-label small fw-bold">เวลานัดส่งคืน:</label>
+                            <input type="text" name="owner_note" class="form-control rounded-3 border-light shadow-sm" placeholder="เช่น วันพรุ่งนี้ 10:00 น.">
                         </div>
 
                         <div class="row g-2">
                             <div class="col-6">
-                                <label class="form-label small fw-bold text-danger">เก็บเงินเพิ่ม (บาท)</label>
-                                <input type="number" name="extra_cash" id="extra_cash" class="form-control border-0 bg-danger bg-opacity-10 text-danger fw-bold" style="border-radius: 12px;" value="0">
+                                <label class="form-label small fw-bold text-danger">เก็บเงินเพิ่ม (ถ้ามี)</label>
+                                <input type="number" name="extra_cash" id="extra_cash" class="form-control rounded-3 border-danger bg-danger bg-opacity-5 fw-bold" value="0">
                             </div>
                             <div class="col-6">
-                                <label class="form-label small fw-bold text-secondary">เหตุผลที่เก็บเพิ่ม</label>
-                                <input type="text" name="extra_note" id="extra_note" class="form-control border-0 bg-light" style="border-radius: 12px;" placeholder="ค่าผ้านวม">
+                                <label class="form-label small fw-bold">เหตุผลที่เก็บเพิ่ม</label>
+                                <input type="text" name="extra_note" id="extra_note" class="form-control rounded-3 border-light" placeholder="เช่น ค่าผ้าห่ม">
                             </div>
                         </div>
 
-                        <button type="submit" class="btn btn-primary w-100 py-3 rounded-pill fw-bold shadow mt-4">
-                            <i class="fa fa-check-circle me-2"></i> ยืนยันรายการ
+                        <button type="submit" id="submit_btn" class="btn btn-primary w-100 py-3 rounded-pill fw-bold shadow mt-4">
+                            ยืนยันและหักสิทธิ์สมาขิก
                         </button>
                     </form>
                 </div>
@@ -252,17 +212,24 @@ $extra_price_per_piece = (int)($shop_q['shop_extra_price'] ?? 10);
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        const services = <?= json_encode($services_list) ?>;
         const deductModal = new bootstrap.Modal(document.getElementById('deductModal'));
         let current_quota = 0;
         
-        function addItemRow(name = '', qty = 1) {
+        function addItemRow(srvId = '', qty = 1) {
             const container = document.getElementById('item_list_container');
             const row = document.createElement('div');
-            row.className = 'row g-2 mb-2 item-row';
+            row.className = 'item-row-select d-flex align-items-center gap-2';
+            
+            let opts = '<option value="">-- เลือกผ้า --</option>';
+            services.forEach(s => {
+                opts += `<option value="${s.service_id}" data-name="${s.service_name}" ${s.service_id===srvId?'selected':''}>${s.service_name}</option>`;
+            });
+
             row.innerHTML = `
-                <div class="col-7"><input type="text" name="item_names[]" class="form-control form-control-sm border-0 rounded-3" value="${name}" placeholder="รายการผ้า"></div>
-                <div class="col-3"><input type="number" name="item_qtys[]" class="form-control form-control-sm border-0 rounded-3 text-center item-qty" value="${qty}" min="1" onchange="calcTotal()"></div>
-                <div class="col-2"><button type="button" class="btn btn-sm text-danger border-0" onclick="this.closest('.item-row').remove(); calcTotal();"><i class="fa fa-times"></i></button></div>
+                <div class="flex-grow-1"><select name="item_ids[]" class="form-select border-0 bg-transparent fw-bold" onchange="calcTotal()">${opts}</select><input type="hidden" name="item_names[]" class="item-name-hidden"></div>
+                <div style="width: 70px;"><input type="number" name="item_qtys[]" class="form-control form-control-sm border-0 bg-white text-center fw-bold item-qty" value="${qty}" min="1" onchange="calcTotal()"></div>
+                <button type="button" class="btn btn-sm text-danger border-0" onclick="this.closest('.item-row-select').remove(); calcTotal();"><i class="fa fa-times"></i></button>
             `;
             container.appendChild(row);
             calcTotal();
@@ -270,34 +237,56 @@ $extra_price_per_piece = (int)($shop_q['shop_extra_price'] ?? 10);
 
         function calcTotal() {
             let total = 0;
-            document.querySelectorAll('.item-qty').forEach(input => {
-                total += parseInt(input.value) || 0;
+            document.querySelectorAll('.item-row-select').forEach(row => {
+                const sel = row.querySelector('select');
+                const qty = parseInt(row.querySelector('.item-qty').value) || 0;
+                if(sel.value) {
+                    total += qty;
+                    row.querySelector('.item-name-hidden').value = sel.options[sel.selectedIndex].getAttribute('data-name');
+                }
             });
             document.getElementById('deduct_amount').value = total;
 
             const warning = document.getElementById('quota_warning');
-            const overCountSpan = document.getElementById('over_count');
-            const suggestExtraSpan = document.getElementById('suggest_extra');
+            const btn = document.getElementById('submit_btn');
             const extraCashInput = document.getElementById('extra_cash');
             const extraNoteInput = document.getElementById('extra_note');
             const extraPrice = <?= $extra_price_per_piece ?>;
 
+            // 🛑 กรณีที่ 1: สิทธิ์หมดตั้งแต่เริ่ม (0 หรือ ติดลบ) -> ห้ามบันทึกเด็ดขาด
+            if (current_quota <= 0) {
+                warning.classList.remove('d-none');
+                warning.innerHTML = `<i class="fa fa-ban"></i> สิทธิ์รายเดือนหมดแล้ว! (เหลือ ${current_quota} ชิ้น) กรุณาแจ้งลูกค้าซื้อแพ็กเกจใหม่`;
+                btn.disabled = true;
+                btn.classList.replace('btn-primary', 'btn-secondary');
+                btn.classList.replace('btn-danger', 'btn-secondary');
+                btn.innerText = 'ไม่สามารถบันทึกได้ (สิทธิ์หมด)';
+                return;
+            }
+
+            // ✅ กรณีที่ 2: ยังมีสิทธิ์เหลือ แต่ครั้งนี้ส่งเกิน
             if (total > current_quota) {
                 const over = total - current_quota;
-                const suggest = over * extraPrice; 
+                const suggestPrice = over * extraPrice;
                 warning.classList.remove('d-none');
-                overCountSpan.innerText = over;
-                suggestExtraSpan.innerText = suggest;
-                if (extraCashInput.value == 0) {
-                    extraCashInput.value = suggest;
-                    extraNoteInput.value = `ซักเกินโควตา ${over} ชิ้น`;
-                }
+                warning.innerHTML = `<i class="fa fa-exclamation-triangle"></i> เกินโควตาไป ${over} ชิ้น! (แนะนำเรียกเก็บเพิ่ม ${suggestPrice} บาท)`;
+                
+                extraCashInput.value = suggestPrice;
+                extraNoteInput.value = `ซักเกินโควตา ${over} ชิ้น`;
+                
+                btn.disabled = false; 
+                btn.classList.replace('btn-secondary', 'btn-danger');
+                btn.classList.replace('btn-primary', 'btn-danger');
+                btn.innerText = `ยืนยัน (เรียกเก็บเพิ่ม ฿${suggestPrice})`;
             } else {
+                // 🟢 กรณีที่ 3: ปกติ
                 warning.classList.add('d-none');
-                if (extraNoteInput.value.includes('ซักเกินโควตา')) {
-                    extraCashInput.value = 0;
-                    extraNoteInput.value = '';
-                }
+                extraCashInput.value = 0;
+                extraNoteInput.value = '';
+                btn.disabled = false;
+                btn.classList.replace('btn-secondary', 'btn-primary');
+                btn.classList.replace('btn-danger', 'btn-primary');
+                btn.innerText = 'ยืนยันและหักสิทธิ์สมาขิก';
             }
         }
 
@@ -306,25 +295,35 @@ $extra_price_per_piece = (int)($shop_q['shop_extra_price'] ?? 10);
             document.getElementById('modal_m_id').value = id;
             document.getElementById('modal_m_name').innerText = name;
             document.getElementById('modal_m_quota').innerText = quota;
-            document.getElementById('modal_round_text').innerText = 'รอบที่ ' + nextRound + ' / 4 ครั้ง';
-            
+            document.getElementById('modal_round_text').innerText = 'หักผ้าครั้งที่ ' + nextRound + ' จากสิทธิ์การรับส่ง 4 ครั้ง';
             document.getElementById('item_list_container').innerHTML = '';
-            addItemRow('เสื้อยืด', 1);
-            addItemRow('กางเกง', 1);
             
-            document.getElementById('extra_cash').value = 0;
-            document.getElementById('extra_note').value = '';
+            // เพิ่มรายการเริ่มต้น (ถ้ามีรายการ เสื้อ/กางเกง ให้ดึง ID มาใส่)
+            addItemRow(); 
             deductModal.show();
         }
 
         document.getElementById('deductForm').onsubmit = function(e) {
             e.preventDefault();
+            const btn = document.getElementById('submit_btn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa fa-spinner fa-spin me-2"></i>กำลังบันทึก...';
+
             const formData = new FormData(this);
             fetch('process_quick_deduct.php', { method: 'POST', body: formData })
             .then(res => res.text())
             .then(data => {
                 if(data.trim() === 'success') { location.reload(); }
-                else { alert('เกิดข้อผิดพลาด: ' + data); }
+                else { 
+                    alert('เกิดข้อผิดพลาด: ' + data); 
+                    btn.disabled = false;
+                    btn.innerText = 'ยืนยันและหักสิทธิ์สมาขิก';
+                }
+            })
+            .catch(err => {
+                alert('การเชื่อมต่อล้มเหลว');
+                btn.disabled = false;
+                btn.innerText = 'ยืนยันและหักสิทธิ์สมาขิก';
             });
         };
     </script>

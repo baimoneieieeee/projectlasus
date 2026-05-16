@@ -25,8 +25,27 @@ $shop_name = $shop_info['shop_name1'] ?? 'Laundry System';
 // ดึงข้อมูลโควตารายเดือนจาก JSON
 $json_file = __DIR__ . '/../config/monthly_data.json';
 $monthly_data = file_exists($json_file) ? json_decode(file_get_contents($json_file), true) : [];
-$my_quota = (isset($monthly_data[$m_id]) && isset($monthly_data[$m_id]['quota'])) ? $monthly_data[$m_id]['quota'] : null;
+$my_quota = (isset($monthly_data[$m_id]) && isset($monthly_data[$m_id]['quota'])) ? (int)$monthly_data[$m_id]['quota'] : null;
+$my_total = (isset($monthly_data[$m_id]) && isset($monthly_data[$m_id]['total_quota'])) ? (int)$monthly_data[$m_id]['total_quota'] : 80;
 $my_pickups = (isset($monthly_data[$m_id]) && isset($monthly_data[$m_id]['pickups_used'])) ? $monthly_data[$m_id]['pickups_used'] : 0;
+
+// --- 🚩 [Auto Reset Safety Net] ---
+// หากโควตาหมด หรือครบ 4 รอบ และไม่มีออเดอร์รายเดือนที่ยังค้างอยู่ (Status < 4)
+// ให้รีเซ็ตสมาชิกโดยอัตโนมัติ (กรณีที่การรีเซ็ตที่หน้าเจ้าของร้านไม่ทำงานหรือทำไปก่อนอัปเดตโค้ด)
+if ($my_quota !== null && ($my_quota <= 0 || $my_pickups >= 4)) {
+    $check_active = $conn->query("SELECT order_id FROM orders WHERE m_id = '$m_id' AND order_status < 4 AND (order_id LIKE 'PKG%' OR order_pickup_round > 0)");
+    if ($check_active->num_rows == 0) {
+        unset($monthly_data[$m_id]);
+        file_put_contents($json_file, json_encode($monthly_data, JSON_PRETTY_PRINT));
+        $my_quota = null; // ปรับสถานะในหน้านี้ทันทีเพื่อให้แสดงหน้าสมัครใหม่
+    }
+}
+
+// คำนวณยอดที่ใช้ไป
+$used_pieces = ($my_quota !== null) ? ($my_total - $my_quota) : 0;
+$extra_pieces = ($my_quota !== null && $my_quota < 0) ? abs($my_quota) : 0;
+// แสดงจำนวนที่ส่งจริง (ถ้าเกินก็โชว์ตามจริง เช่น 81 / 80)
+$display_used = $used_pieces;
 
 // --- 🚩 ดึงชื่อแพ็กเกจล่าสุดที่สมัคร ---
 $pkg_name = "แพ็กเกจสมาชิก";
@@ -133,7 +152,25 @@ $s_color = [0=>'bg-secondary', 1=>'bg-warning text-dark', 2=>'bg-info', 3=>'bg-p
                                 <p class="mb-0 small fw-bold text-white">ชื่อแพ็กเกจที่สมัคร: <?= htmlspecialchars($pkg_name) ?></p>
                                 <i class="fa fa-gem text-white opacity-50"></i>
                             </div>
-                            <h2 class="fw-bold mb-3"><?= $my_quota ?> <small class="fs-6 fw-normal">ชิ้น</small></h2>
+                            <div class="d-flex justify-content-between align-items-end mb-1">
+                                <h2 class="fw-bold mb-0">
+                                    <?= $display_used ?> <small class="fs-6 fw-normal">/ <?= $my_total ?> ชิ้น</small>
+                                </h2>
+                                <span class="badge bg-white bg-opacity-20 rounded-pill px-2 py-1 smaller" style="font-size: 0.65rem;">ใช้ไปแล้ว</span>
+                            </div>
+                            
+                            <?php if($extra_pieces > 0): ?>
+                                <div class="bg-white bg-opacity-10 rounded-3 p-2 mb-3 border border-white border-opacity-20 mt-2">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <span class="smaller"><i class="fa fa-exclamation-circle me-1"></i> ส่งซักเกินโควตา:</span>
+                                        <span class="fw-bold text-warning">+ <?= $extra_pieces ?> ชิ้น</span>
+                                    </div>
+                                    <div class="smaller opacity-75 mt-1" style="font-size: 0.65rem;">* ระบบจะคิดค่าบริการส่วนเกินในรอบที่ส่งซักครับ</div>
+                                </div>
+                            <?php else: ?>
+                                <p class="mb-3 small opacity-75">โควตาคงเหลือ: <?= $my_quota ?> ชิ้น</p>
+                            <?php endif; ?>
+
                             <div class="border-top border-white border-opacity-20 pt-3">
                                 <p class="mb-1 small opacity-75">สิทธิ์การส่งซักเดือนนี้</p>
                                 <?php 
@@ -141,7 +178,7 @@ $s_color = [0=>'bg-secondary', 1=>'bg-warning text-dark', 2=>'bg-info', 3=>'bg-p
                                     $display_pickups = ($my_pickups > 0) ? ($my_pickups % 4 ?: 4) : 0;
                                 ?>
                                 <h5 class="fw-bold mb-0">ครั้งที่ <?= $display_pickups ?> <small class="fs-6 fw-normal text-white-50">/ 4 ครั้ง</small></h5>
-                                <div class="smaller text-white-50 mt-2" style="font-size: 0.65rem;">* ครบ 4 ครั้ง ระบบจะเริ่มรอบสมาชิกใหม่ทันที</div>
+                                <div class="smaller text-white-50 mt-2" style="font-size: 0.65rem;">* ครบ 4 ครั้ง หรือใช้โควตาครบ ระบบจะรีเซ็ตเพื่อเริ่มรอบใหม่ทันที</div>
                             </div>
                         </div>
                     <?php else: ?>

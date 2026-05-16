@@ -51,7 +51,7 @@ ALTER TABLE `member` MODIFY COLUMN `m_mail` varchar(50) COMMENT 'อีเมล
 -- ตาราง service_type
 ALTER TABLE `service_type` MODIFY COLUMN `svType_id` varchar(13) COMMENT 'รหัสประเภทบริการ';
 ALTER TABLE `service_type` MODIFY COLUMN `svType_name` varchar(50) COMMENT 'ชื่อประเภทบริการ';
-ALTER TABLE `service_type` MODIFY COLUMN `svType_behavior` varchar(20) COMMENT 'พฤติกรรมการคิดเงิน (quota/special)';
+ALTER TABLE `service_type` MODIFY COLUMN `svType_behavior` varchar(20) COMMENT 'พฤติกรรมการคิดเงิน (monthly/per_piece)';
 
 -- ตาราง service
 ALTER TABLE `service` MODIFY COLUMN `service_id` varchar(13) COMMENT 'รหัสบริการ';

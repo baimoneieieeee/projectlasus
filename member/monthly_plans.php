@@ -16,6 +16,12 @@ $pkg_res = $conn->query("SELECT * FROM service WHERE service_quota > 0 ORDER BY 
 $shop_info = $conn->query("SELECT shop_extra_price FROM shop LIMIT 1")->fetch_assoc();
 $extra_price = (int)($shop_info['shop_extra_price'] ?? 10);
 
+// 🚩 ดึงเงื่อนไขจาก JSON
+$settings_file = __DIR__ . '/../config/shop_settings.json';
+$settings = file_exists($settings_file) ? json_decode(file_get_contents($settings_file), true) : [];
+$cond_rounds = $settings['membership_rounds'] ?? 'ให้บริการ 4 รอบ/เดือน (สัปดาห์ละ 1 ครั้ง)';
+$cond_delivery = $settings['membership_delivery'] ?? 'บริการรับ-ส่งฟรี ในระยะทางที่กำหนด';
+
 if (isset($_POST['apply_monthly'])) {
     $service_id = $_POST['service_id'];
     $pkg_stmt = $conn->query("SELECT * FROM service WHERE service_id = '$service_id'");
@@ -83,13 +89,9 @@ if (isset($_POST['apply_monthly'])) {
                         <div class="text-start mb-4 flex-grow-1">
                             <h6 class="fw-bold small text-dark mb-3"><i class="fa fa-info-circle me-2 text-primary"></i>เงื่อนไขการใช้งาน:</h6>
                             <ul class="list-unstyled d-flex flex-column gap-2 smaller text-muted">
-                                <!-- <li class="d-flex align-items-start">
-                                    <i class="fa fa-check-circle text-success me-2 mt-1"></i>
-                                    <span>ระยะเวลาการใช้งาน <b>30 วัน</b></span>
-                                </li> -->
                                 <li class="d-flex align-items-start">
                                     <i class="fa fa-sync text-primary me-2 mt-1"></i>
-                                    <span>ให้บริการ <b>4 รอบ/เดือน</b> (สัปดาห์ละ 1 ครั้ง)</span>
+                                    <span><b><?= htmlspecialchars($cond_rounds) ?></b></span>
                                 </li>
                                 <li class="d-flex align-items-start">
                                     <i class="fa fa-box-open text-primary me-2 mt-1"></i>
@@ -101,7 +103,7 @@ if (isset($_POST['apply_monthly'])) {
                                 </li>
                                 <li class="d-flex align-items-start">
                                     <i class="fa fa-truck text-success me-2 mt-1"></i>
-                                    <span><b>บริการรับ-ส่งฟรี</b> ในระยะทางที่กำหนด</span>
+                                    <span><b><?= htmlspecialchars($cond_delivery) ?></b></span>
                                 </li>
                             </ul>
                         </div>

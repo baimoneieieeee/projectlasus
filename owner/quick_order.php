@@ -18,7 +18,6 @@ if (isset($_POST['create_quick_order'])) {
     $order_id = "ORD" . time();
     $now = date("Y-m-d H:i:s");
 
-    // ... (ส่วนจัดการ JSON เหมือนเดิม) ...
     $json_file = __DIR__ . '/../config/monthly_data.json';
     $monthly_data = file_exists($json_file) ? json_decode(file_get_contents($json_file), true) : [];
 
@@ -32,7 +31,7 @@ if (isset($_POST['create_quick_order'])) {
     }
 
     // 2. สร้างออเดอร์ในฐานข้อมูล
-    $note_appendix = ($quota_deduct > 0) ? " (หักโควตา $quota_deduct ชิ้น)" : "";
+    $note_appendix = ($quota_deduct > 0) ? " (หักรายเดือน $quota_deduct ชิ้น)" : "";
     $full_note = $note . $note_appendix;
     
     $status = ($extra_cash > 0) ? 1 : 2; 
@@ -75,19 +74,14 @@ $res_members = $conn->query("SELECT m.* FROM member m");
                 <p class="text-muted">สำหรับบันทึกรายการกรณีลูกค้าหน้าร้าน หรือลูกค้านำผ้ามาส่งเองโดยไม่ได้แจ้งผ่านแอป</p>
             </div>
             
-            <!-- 💡 กล่องคำแนะนำ -->
             <div class="alert alert-warning border-0 shadow-sm rounded-4 p-3 mb-4">
                 <div class="fw-bold mb-1 small"><i class="fa fa-info-circle me-1"></i> วิธีใช้งาน:</div>
                 <ul class="mb-0 smaller text-dark" style="font-size: 0.85rem;">
-                    <li><b>หักผ้าปกติ:</b> ใส่จำนวนในช่อง "จำนวนผ้าปกติ" (จะไปลบจาก 80 ชิ้น)</li>
+                    <li><b>หักรายเดือน:</b> ใส่จำนวนในช่อง "จำนวนผ้าปกติ" (จะไปลบจากโควตารายเดือน)</li>
                     <li><b>นับรอบส่ง:</b> เลือกว่าครั้งนี้คือรอบที่เท่าไหร่จาก 4 ครั้งต่อเดือน</li>
-                    <li><b>ผ้าพิเศษ:</b> ถ้ามีผ้านวมให้ใส่ราคาเพิ่ม ถ้าไม่มีใส่ 0</li>
+                    <li><b>รายชิ้น/พิเศษ:</b> ถ้ามีผ้าที่ต้องจ่ายเพิ่มให้ใส่ราคาตรงนี้ ถ้าไม่มีใส่ 0</li>
                 </ul>
             </div>
-
-            <?php if(isset($error)): ?>
-                <div class="alert alert-danger rounded-4 border-0 shadow-sm"><?= $error ?></div>
-            <?php endif; ?>
 
             <div class="card card-custom p-5">
                 <form method="post">
@@ -104,7 +98,7 @@ $res_members = $conn->query("SELECT m.* FROM member m");
                         <div class="col-md-6">
                             <label class="form-label fw-bold text-primary">2. จำนวนผ้าปกติ (ชิ้น)</label>
                             <input type="number" name="quota_deduct" class="form-control form-control-lg rounded-3 border-primary shadow-sm" value="0" min="0" required>
-                            <div class="form-text text-primary">ใส่จำนวนเสื้อผ้าทั่วไป <b>เพื่อหักโควตา</b></div>
+                            <div class="form-text text-primary">ใส่จำนวนเสื้อผ้าทั่วไป <b>เพื่อหักสิทธิ์รายเดือน</b></div>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold">3. รอบการส่งผ้า (ครั้งที่)</label>
@@ -115,12 +109,12 @@ $res_members = $conn->query("SELECT m.* FROM member m");
                                 <option value="3">รอบที่ 3</option>
                                 <option value="4">รอบที่ 4</option>
                             </select>
-                            <div class="form-text small">ระบุเพื่อให้นักจำนวน 4 ครั้งต่อเดือน</div>
+                            <div class="form-text small">ระบุเพื่อให้นับจำนวน 4 ครั้งต่อเดือน</div>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold text-danger">4. ยอดเงินเก็บเพิ่ม (บาท)</label>
                             <input type="number" step="0.01" name="extra_cash" class="form-control form-control-lg rounded-3 border-danger shadow-sm" value="0" min="0" required>
-                            <div class="form-text text-danger">ราคาผ้าพิเศษ <b>ถ้าไม่มีใส่ 0</b></div>
+                            <div class="form-text text-danger">ราคาซักแบบ<b>รายชิ้น</b> (ถ้ามี) <b>ถ้าไม่มีใส่ 0</b></div>
                         </div>
                         <div class="col-md-12">
                             <label class="form-label fw-bold">5. หมายเหตุ (สรุปรายการ)</label>

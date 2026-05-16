@@ -30,14 +30,16 @@ if (isset($_POST['use_quota'])) {
         // 🧺 จัดการรายการผ้าแยกย่อย (จากฟอร์มจัดการออเดอร์)
         $item_names = $_POST['item_names'] ?? [];
         $item_qtys = $_POST['item_qtys'] ?? [];
+        $service_ids = $_POST['service_ids'] ?? [];
         $itemized_summary = "";
         $items_to_save = [];
 
         for ($i = 0; $i < count($item_names); $i++) {
             $name = trim($item_names[$i]);
             $qty = (int)$item_qtys[$i];
-            if ($name !== "" && $qty > 0) {
-                $items_to_save[] = ['name' => $name, 'qty' => $qty];
+            $sid = $conn->real_escape_string($service_ids[$i] ?? '');
+            if ($name !== "" && $qty > 0 && $sid !== "") {
+                $items_to_save[] = ['name' => $name, 'qty' => $qty, 'service_id' => $sid];
             }
         }
 
@@ -80,9 +82,11 @@ if (isset($_POST['use_quota'])) {
         $monthly_data = file_exists($json_file) ? json_decode(file_get_contents($json_file), true) : [];
         
         $current_pickups = 0;
+        $is_pkg_order = (strpos($order_id, 'PKG') === 0);
         
         // --- 🚩 อัปเดตโควตาใน JSON เฉพาะเมื่อเป็นการบันทึกครั้งแรก (order_items_count เดิมเป็น 0) ---
-        if ($old_order_items_count == 0 && $quota_deduct > 0 && isset($monthly_data[$m_id])) {
+        // และต้องไม่ใช่บิล PKG เพราะบิล PKG จะไปหักและนับรอบที่ 1 ใน confirm_payment.php อยู่แล้ว
+        if (!$is_pkg_order && $old_order_items_count == 0 && $quota_deduct > 0 && isset($monthly_data[$m_id])) {
             $current_pickups = (int)($monthly_data[$m_id]['pickups_used'] ?? 0);
             
             // หักโควตา
@@ -98,11 +102,22 @@ if (isset($_POST['use_quota'])) {
             $monthly_data[$m_id]['pickups_used'] = $current_pickups;
             $monthly_data[$m_id]['updated_at'] = date("Y-m-d H:i:s");
             file_put_contents($json_file, json_encode($monthly_data, JSON_PRETTY_PRINT));
-        } else if ($quota_deduct > 0 && isset($monthly_data[$m_id])) {
-            // ถ้าเป็นการอัปเดต และยังมีการหักโควตา ให้ใช้รอบเดิมที่มีอยู่
+        } else if (isset($monthly_data[$m_id])) {
+            // ถ้าเป็นบิล PKG หรือเป็นการอัปเดต ให้ดึงรอบปัจจุบันจาก JSON มาใช้
             $current_pickups = (int)($monthly_data[$m_id]['pickups_used'] ?? 0);
+            
+            // 🚩 [สำคัญ] ถ้าไม่ได้มีการหักโควตาจริง (quota_deduct == 0) ให้รอบเป็น 0
+            // เพื่อให้ระบบแยกไปอยู่ในส่วน "ซักรายครั้ง" ในหน้าบ้านลูกค้าครับ
+            if ($quota_deduct <= 0 && !$is_pkg_order) {
+                $current_pickups = 0;
+            }
+
+            // กรณีพิเศษ: ถ้าเป็นบิล PKG และมีการซักผ้ามาด้วย ให้ถือว่าเป็นรอบที่ 1 เสมอ
+            if ($is_pkg_order && $quota_deduct > 0) {
+                $current_pickups = 1;
+            }
         } else {
-            // ถ้า quota_deduct เป็น 0 ให้รอบเป็น 0 เพื่อให้ไปปรากฏในรายการ "ซักรายครั้ง"
+            // ถ้าไม่ใช่สมาชิก ให้รอบเป็น 0 เสมอ
             $current_pickups = 0;
         }
 
@@ -125,30 +140,35 @@ if (isset($_POST['use_quota'])) {
 
             $id_base = substr($order_id, 3);
 
+            // ดึงรหัสบริการเริ่มต้นสำหรับเคส "งานซักทั่วไป" เพื่อป้องกัน Error
+            $default_srv_res = $conn->query("SELECT service_id FROM service LIMIT 1");
+            $default_srv_id = ($default_srv_res->num_rows > 0) ? $default_srv_res->fetch_assoc()['service_id'] : '';
+
             // รายการซักหลัก (บันทึกแยกรายชิ้นตามที่กรอก)
             if (!empty($items_to_save)) {
                 foreach ($items_to_save as $idx => $item) {
                     $itm_id = $id_base . sprintf("%03d", $idx + 1);
                     $it_name = $conn->real_escape_string($item['name']);
-                    $conn->query("INSERT INTO item (item_id, order_id, item_name, service_id, item_amount) VALUES ('$itm_id', '$order_id', '$it_name', 'SRV1771999730', {$item['qty']})");
+                    $sid = $conn->real_escape_string($item['service_id']);
+                    $conn->query("INSERT INTO item (item_id, order_id, item_name, service_id, item_amount) VALUES ('$itm_id', '$order_id', '$it_name', '$sid', {$item['qty']})");
                 }
             } else if($quota_deduct > 0 || $base_price > 0) {
                 // กรณีไม่ได้กรอกแยกย่อยมา ให้บันทึกเป็นก้อนเดียวเหมือนเดิม
                 $item_id_main = $id_base . "001";
                 $qty = ($quota_deduct > 0) ? $quota_deduct : 1;
-                $conn->query("INSERT INTO item (item_id, order_id, item_name, service_id, item_amount) VALUES ('$item_id_main', '$order_id', 'งานซักทั่วไป', 'SRV1771999730', $qty)");
+                if ($default_srv_id !== "") {
+                    $conn->query("INSERT INTO item (item_id, order_id, item_name, service_id, item_amount) VALUES ('$item_id_main', '$order_id', 'งานซักทั่วไป', '$default_srv_id', $qty)");
+                }
             }
 
             // รายการบวกเพิ่ม
-            if($extra_cash > 0) {
-                $item_id_extra = $id_base . "999"; // ใช้ 999 เพื่อไม่ให้ซ้ำกับรายการปกติ
-                $srv_id = 'SRV1772000644'; // ผ้านวม
-                $it_extra_name = 'บริการบวกเพิ่ม';
-                if(strpos($extra_note, 'ชุดราชการ') !== false) {
-                    $srv_id = 'SRV1772000615';
-                    $it_extra_name = 'ชุดราชการ';
-                }
+            if($extra_cash > 0 && $default_srv_id !== "") {
+                $item_id_extra = $id_base . "999"; 
+                // ค้นหารหัสบริการ "ผ้านวม" หรือ "บริการบวกเพิ่ม" ถ้าไม่มีให้ใช้ Default
+                $srv_q = $conn->query("SELECT service_id FROM service WHERE service_name LIKE '%ผ้านวม%' OR service_name LIKE '%บวกเพิ่ม%' LIMIT 1");
+                $srv_id = ($srv_q->num_rows > 0) ? $srv_q->fetch_assoc()['service_id'] : $default_srv_id;
                 
+                $it_extra_name = 'บริการบวกเพิ่ม';
                 $conn->query("INSERT INTO item (item_id, order_id, item_name, service_id, item_amount) VALUES ('$item_id_extra', '$order_id', '$it_extra_name', '$srv_id', 1)");
             }
 

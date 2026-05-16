@@ -19,6 +19,8 @@ if (isset($_POST['add_service'])) {
     $sql = "INSERT INTO service (service_id, service_name, svType_id, service_price, service_quota, service_note) 
             VALUES ('$id', '$name', '$type_id', '$price', '$quota', '$note')";
     $conn->query($sql);
+    header("Location: manage_services.php");
+    exit;
 }
 
 // จัดการการลบบริการ
@@ -44,140 +46,136 @@ if (isset($_POST['edit_service'])) {
     exit;
 }
 
-$res_types = $conn->query("SELECT * FROM service_type");
+$res_types = $conn->query("SELECT * FROM service_type ORDER BY svType_behavior DESC");
 $types_array = [];
 while($t = $res_types->fetch_assoc()) $types_array[] = $t;
 
-$res_services = $conn->query("SELECT s.*, t.svType_name FROM service s JOIN service_type t ON s.svType_id = t.svType_id");
+// ดึงข้อมูลบริการแยกตามหมวดหมู่หลัก 2 อัน (กรองเอาเฉพาะรายการซักผ้าจริงๆ ไม่เอาตัวแพ็กเกจ)
+$res_monthly = $conn->query("SELECT s.*, t.svType_name FROM service s JOIN service_type t ON s.svType_id = t.svType_id WHERE t.svType_behavior = 'monthly' AND s.service_quota = 0 ORDER BY s.service_id DESC");
+$res_per_piece = $conn->query("SELECT s.*, t.svType_name FROM service s JOIN service_type t ON s.svType_id = t.svType_id WHERE t.svType_behavior = 'per_piece' AND s.service_quota = 0 ORDER BY s.service_price ASC");
 ?>
 <!doctype html>
 <html lang="th">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>จัดการบริการ - Laundry</title>
+    <title>จัดการรายการบริการ - Laundry</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600;700&display=swap');
+        body { background: #f8fafc; font-family: 'Chakra Petch', sans-serif; }
+        .main-content { margin-left: 280px; padding: 40px; }
+        .card-custom { border: none; border-radius: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); background: white; margin-bottom: 30px; }
+        .group-header-monthly { border-bottom: 3px solid #2563eb; padding-bottom: 10px; margin-bottom: 20px; color: #2563eb; display: flex; align-items: center; }
+        .group-header-per-piece { border-bottom: 3px solid #10b981; padding-bottom: 10px; margin-bottom: 20px; color: #10b981; display: flex; align-items: center; }
+        .badge-package { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+        .badge-item { background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0; }
+        @media (max-width: 991px) { .main-content { margin-left: 0; padding: 20px; } }
+    </style>
 </head>
 <body>
     <?php include 'sidebar.php'; ?>
 
     <div class="main-content">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h3 class="fw-bold mb-0">🛠 จัดการรายการบริการ (ราคา)</h3>
-                <p class="text-muted small">ตั้งค่ารายการซักผ้าและราคาสำหรับหน้าร้าน</p>
-            </div>
-            <div class="d-flex gap-2">
-                <a href="manage_service_types.php" class="btn btn-outline-primary rounded-pill px-4 py-2 fw-bold shadow-sm">
-                    <i class="fa fa-layer-group me-2"></i> จัดการหมวดหมู่
-                </a>
-                <button class="btn btn-primary rounded-pill px-4 py-2 shadow-sm fw-bold" data-bs-toggle="modal" data-bs-target="#addServiceModal">
-                    <i class="fa fa-plus-circle me-2"></i> เพิ่มบริการใหม่
-                </button>
-            </div>
-        </div>
-
-        <!-- 💡 คู่มือการตั้งค่าบริการ -->
-        <div class="row mb-4">
-            <div class="col-md-6">
-                <div class="card border-0 shadow-sm rounded-4 p-3 bg-primary bg-opacity-10 h-100">
-                    <div class="fw-bold text-primary mb-2 small"><i class="fa fa-star me-1"></i> การตั้งค่า "แพ็กเกจสมาชิก"</div>
-                    <p class="small text-muted mb-0">ให้ใส่ <b>จำนวนชิ้นโควตา</b> (เช่น 80) และตั้ง <b>ราคา</b> (เช่น 800) เพื่อให้ลูกค้าเห็นและกดสมัครได้</p>
-                    <div class="mt-2 small text-primary fw-bold">ตัวอย่าง: แพ็กเกจ 80 ชิ้น ราคา 800 บาท</div>
+        <div class="container-fluid">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h2 class="fw-bold mb-1">🛠 จัดการรายการบริการ</h2>
+                    <p class="text-muted">กำหนดรายการซักและราคาขายของร้าน</p>
+                </div>
+                <div class="d-flex gap-2">
+                    <a href="manage_service_types.php" class="btn btn-outline-secondary rounded-pill px-4 fw-bold">
+                        <i class="fa fa-layer-group me-2"></i> หมวดหมู่
+                    </a>
+                    <button class="btn btn-primary rounded-pill px-4 shadow fw-bold" data-bs-toggle="modal" data-bs-target="#addServiceModal">
+                        <i class="fa fa-plus me-2"></i> เพิ่มรายการใหม่
+                    </button>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="card border-0 shadow-sm rounded-4 p-3 bg-success bg-opacity-10 h-100">
-                    <div class="fw-bold text-success mb-2 small"><i class="fa fa-tag me-1"></i> การตั้งค่า "ผ้าพิเศษ"</div>
-                    <p class="small text-muted mb-0">ให้ใส่ <b>ราคาต่อชิ้น</b> (เช่น 150) และตั้งค่า <b>จำนวนโควตาเป็น 0</b> เพื่อคิดเงินแยกรายชิ้น</p>
-                    <div class="mt-2 small text-success fw-bold">ตัวอย่าง: ผ้านวม 150 บาท / ชุดไหม 250 บาท</div>
-                </div>
-            </div>
-        </div>
 
-        <div class="row g-4">
-            <!-- Section 1: รายการสำหรับสมาชิกรรายเดือน (หักโควตา) -->
-            <div class="col-lg-6">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-header bg-white border-0 pt-4 pb-0 px-4">
-                        <div class="d-flex align-items-center">
-                            <div class="bg-warning bg-opacity-10 text-warning p-3 rounded-circle me-3">
-                                <i class="fa fa-star fa-lg"></i>
-                            </div>
-                            <div>
-                                <h5 class="fw-bold mb-0">รายการหักโควตา</h5>
-                                <span class="badge bg-warning text-dark rounded-pill mt-1">แพ็กเกจรายเดือน (ราคา 0฿)</span>
-                            </div>
-                        </div>
+            <div class="row g-4">
+                <!-- 📦 กลุ่มที่ 1: รายการในหมวด "รายเดือน" -->
+                <div class="col-lg-6">
+                    <div class="group-header-monthly">
+                        <i class="fa fa-calendar-check fa-lg me-3"></i>
+                        <h4 class="fw-bold mb-0">รายการกลุ่ม: รายเดือน</h4>
                     </div>
-                    <div class="card-body p-4">
+                    <div class="card card-custom p-3">
+                        <div class="alert alert-primary bg-primary bg-opacity-10 border-0 rounded-4 smaller text-primary mb-3" style="font-size: 0.85rem;">
+                            <i class="fa fa-info-circle me-1"></i> รายการในกลุ่มนี้จะใช้สำหรับ <b>หักาผ้ารายเดือนว่ามีบริการอะไรบ้าง</b> หรือ <b>แพ็กเกจรายเดือนมีอะไรบ้าง</b> สมาชิก
+                        </div>
                         <div class="table-responsive">
-                            <table class="table table-borderless table-hover align-middle">
+                            <table class="table table-hover align-middle">
                                 <tbody>
-                                                            <?php 
-                                                            $res_t1 = $conn->query("SELECT s.* FROM service s JOIN service_type t ON s.svType_id = t.svType_id WHERE t.svType_behavior = 'quota'");
-                                                            if($res_t1->num_rows > 0): 
-                                                                while($s = $res_t1->fetch_assoc()): 
-                                                            ?>                                        <tr class="border-bottom border-light">
-                                            <td class="py-3">
-                                                <div class="fw-bold text-dark"><?= $s['service_name'] ?></div>
-                                            </td>
-                                            <td class="text-end py-3">
-                                                <button class="btn btn-light btn-sm rounded-circle me-1 shadow-sm text-primary" data-bs-toggle="modal" data-bs-target="#editServiceModal" 
-                                                        data-id="<?= $s['service_id'] ?>" data-name="<?= $s['service_name'] ?>" data-type="<?= $s['svType_id'] ?>" data-price="<?= $s['service_price'] ?>" data-quota="<?= $s['service_quota'] ?>" data-note="<?= htmlspecialchars($s['service_note']) ?>">
-                                                    <i class="fa fa-edit"></i>
-                                                </button>
-                                                <a href="?delete=<?= $s['service_id'] ?>" class="btn btn-light btn-sm rounded-circle shadow-sm text-danger" onclick="return confirm('ยืนยันการลบ?')"><i class="fa fa-trash"></i></a>
-                                            </td>
-                                        </tr>
+                                    <?php if($res_monthly->num_rows > 0): while($s = $res_monthly->fetch_assoc()): 
+                                        $is_package = ($s['service_quota'] > 0);
+                                    ?>
+                                    <tr>
+                                        <td>
+                                            <div class="d-flex align-items-center">
+                                                <div class="me-3 fs-4"><?= $is_package ? '📦' : '👕' ?></div>
+                                                <div>
+                                                    <div class="fw-bold text-dark"><?= $s['service_name'] ?></div>
+                                                    <?php if($is_package): ?>
+                                                        <span class="badge badge-package rounded-pill small">แพ็กเกจ: <?= $s['service_quota'] ?> ชิ้น</span>
+                                                    <?php else: ?>
+                                                        <span class="badge badge-item rounded-pill small text-muted">หักโควตาผ้า</span>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="text-end fw-bold">฿<?= number_format($s['service_price'], 0) ?></td>
+                                        <td class="text-end">
+                                            <button class="btn btn-light btn-sm rounded-circle text-primary" data-bs-toggle="modal" data-bs-target="#editServiceModal" 
+                                                    data-id="<?= $s['service_id'] ?>" data-name="<?= $s['service_name'] ?>" data-type="<?= $s['svType_id'] ?>" data-price="<?= $s['service_price'] ?>" data-quota="<?= $s['service_quota'] ?>" data-note="<?= htmlspecialchars($s['service_note']) ?>">
+                                                <i class="fa fa-edit"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
                                     <?php endwhile; else: ?>
-                                        <tr><td colspan="2" class="text-center py-4 text-muted small bg-light rounded-3">ยังไม่มีรายการในหมวดนี้</td></tr>
+                                    <tr><td class="text-center py-4 text-muted">ยังไม่มีรายการ</td></tr>
                                     <?php endif; ?>
                                 </tbody>
                             </table>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <!-- Section 2: รายการผ้าพิเศษ/รายครั้ง (จ่ายเงินสดเพิ่ม) -->
-            <div class="col-lg-6">
-                <div class="card border-0 shadow-sm rounded-4 h-100">
-                    <div class="card-header bg-white border-0 pt-4 pb-0 px-4">
-                        <div class="d-flex align-items-center">
-                            <div class="bg-success bg-opacity-10 text-success p-3 rounded-circle me-3">
-                                <i class="fa fa-tag fa-lg"></i>
-                            </div>
-                            <div>
-                                <h5 class="fw-bold mb-0">รายการคิดเงินแยก</h5>
-                                <span class="badge bg-success rounded-pill mt-1">ผ้าพิเศษ (จ่ายเงินสด)</span>
-                            </div>
-                        </div>
+                <!-- 💰 กลุ่มที่ 2: รายการในหมวด "รายชิ้น" -->
+                <div class="col-lg-6">
+                    <div class="group-header-per-piece">
+                        <i class="fa fa-hand-holding-dollar fa-lg me-3"></i>
+                        <h4 class="fw-bold mb-0">รายการกลุ่ม: รายชิ้น</h4>
                     </div>
-                    <div class="card-body p-4">
+                    <div class="card card-custom p-3">
+                        <div class="alert alert-success bg-success bg-opacity-10 border-0 rounded-4 smaller text-success mb-3" style="font-size: 0.85rem;">
+                            <i class="fa fa-info-circle me-1"></i> รายการในกลุ่มนี้จะใช้สำหรับ <b>เก็บเงินสดเพิ่ม</b> (เช่น ผ้าพิเศษ, ผ้านวม)
+                        </div>
                         <div class="table-responsive">
-                            <table class="table table-borderless table-hover align-middle">
+                            <table class="table table-hover align-middle">
                                 <tbody>
-                                                            <?php 
-                                                            $res_t2 = $conn->query("SELECT s.* FROM service s JOIN service_type t ON s.svType_id = t.svType_id WHERE t.svType_behavior = 'special'");
-                                                            if($res_t2->num_rows > 0): 
-                                                                while($s = $res_t2->fetch_assoc()): 
-                                                            ?>                                        <tr class="border-bottom border-light">
-                                            <td class="py-3">
-                                                <div class="fw-bold text-dark"><?= $s['service_name'] ?></div>
-                                                <div class="small fw-bold text-success mt-1">฿<?= number_format($s['service_price'], 2) ?> / ชิ้น</div>
-                                            </td>
-                                            <td class="text-end py-3">
-                                                <button class="btn btn-light btn-sm rounded-circle me-1 shadow-sm text-primary" data-bs-toggle="modal" data-bs-target="#editServiceModal" 
-                                                        data-id="<?= $s['service_id'] ?>" data-name="<?= $s['service_name'] ?>" data-type="<?= $s['svType_id'] ?>" data-price="<?= $s['service_price'] ?>" data-quota="<?= $s['service_quota'] ?>" data-note="<?= htmlspecialchars($s['service_note']) ?>">
-                                                    <i class="fa fa-edit"></i>
-                                                </button>
-                                                <a href="?delete=<?= $s['service_id'] ?>" class="btn btn-light btn-sm rounded-circle shadow-sm text-danger" onclick="return confirm('ยืนยันการลบ?')"><i class="fa fa-trash"></i></a>
-                                            </td>
-                                        </tr>
+                                    <?php if($res_per_piece->num_rows > 0): while($s = $res_per_piece->fetch_assoc()): ?>
+                                    <tr>
+                                        <td>
+                                            <div class="d-flex align-items-center">
+                                                <div class="me-3 fs-4">💰</div>
+                                                <div>
+                                                    <div class="fw-bold text-dark"><?= $s['service_name'] ?></div>
+                                                    <span class="badge badge-item rounded-pill small">เก็บเงินรายครั้ง</span>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="text-end fw-bold text-success">฿<?= number_format($s['service_price'], 0) ?></td>
+                                        <td class="text-end">
+                                            <button class="btn btn-light btn-sm rounded-circle text-primary" data-bs-toggle="modal" data-bs-target="#editServiceModal" 
+                                                    data-id="<?= $s['service_id'] ?>" data-name="<?= $s['service_name'] ?>" data-type="<?= $s['svType_id'] ?>" data-price="<?= $s['service_price'] ?>" data-quota="<?= $s['service_quota'] ?>" data-note="<?= htmlspecialchars($s['service_note']) ?>">
+                                                <i class="fa fa-edit"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
                                     <?php endwhile; else: ?>
-                                        <tr><td colspan="2" class="text-center py-4 text-muted small bg-light rounded-3">ยังไม่มีรายการในหมวดนี้</td></tr>
+                                    <tr><td class="text-center py-4 text-muted">ยังไม่มีรายการ</td></tr>
                                     <?php endif; ?>
                                 </tbody>
                             </table>
@@ -193,39 +191,41 @@ $res_services = $conn->query("SELECT s.*, t.svType_name FROM service s JOIN serv
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 rounded-4 shadow">
                 <form method="post">
-                    <div class="modal-header border-0">
+                    <div class="modal-header border-0 px-4 pt-4">
                         <h5 class="modal-title fw-bold">➕ เพิ่มบริการใหม่</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
-                    <div class="modal-body p-4">
+                    <div class="modal-body p-4 pt-0">
                         <div class="mb-3">
-                            <label class="form-label small fw-bold">ชื่อบริการ</label>
-                            <input type="text" name="name" class="form-control rounded-3" placeholder="เช่น ซัก+อบ" required>
+                            <label class="form-label small fw-bold">ชื่อรายการ (เช่น ซักเสื้อยืด หรือ แพ็กเกจ 80 ชิ้น)</label>
+                            <input type="text" name="name" class="form-control rounded-3" required>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label small fw-bold">ประเภทบริการ</label>
+                            <label class="form-label small fw-bold text-primary">ใส่ไว้ในหมวดหมู่ไหน?</label>
                             <select name="type_id" class="form-select rounded-3" required>
                                 <?php foreach($types_array as $t): ?>
-                                    <option value="<?= $t['svType_id'] ?>"><?= $t['svType_name'] ?></option>
+                                    <option value="<?= $t['svType_id'] ?>"><?= $t['svType_name'] ?> (<?= $t['svType_behavior'] == 'monthly' ? 'หักรายเดือน' : 'เก็บเงินรายครั้ง' ?>)</option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold">ราคา (บาท)</label>
-                            <input type="number" step="0.01" name="price" class="form-control rounded-3" required>
+                        <div class="row g-3 mb-3">
+                            <div class="col-6">
+                                <label class="form-label small fw-bold">ราคาขาย (บาท)</label>
+                                <input type="number" name="price" class="form-control rounded-3" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-bold text-primary">จำนวนโควตา (ถ้ามี)</label>
+                                <input type="number" name="quota" class="form-control rounded-3" value="0">
+                                <div class="smaller text-muted mt-1" style="font-size: 0.7rem;">ใส่ตัวเลขถ้าเป็น "แพ็กเกจ" ถ้าเป็นซักทั่วไปใส่ 0</div>
+                            </div>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold text-primary">จำนวนชิ้นโควตา (เฉพาะรายเดือน)</label>
-                            <input type="number" name="quota" class="form-control rounded-3" value="0">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold">รายละเอียดอื่นๆ (ให้ลูกค้าเห็น)</label>
-                            <textarea name="note" class="form-control rounded-3" rows="4" placeholder="เช่น - ใช้ได้นาน 30 วัน&#10;- ซัก อบ รีด ได้ทุกประเภท&#10;- ส่งได้อาทิตย์ละไม่เกิน 20 ชิ้น"></textarea>
+                        <div class="mb-0">
+                            <label class="form-label small fw-bold">รายละเอียด (ลูกค้าเห็นในแอป)</label>
+                            <textarea name="note" class="form-control rounded-3" rows="2"></textarea>
                         </div>
                     </div>
-                    <div class="modal-footer border-0">
-                        <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">ยกเลิก</button>
-                        <button type="submit" name="add_service" class="btn btn-primary rounded-pill px-4">บันทึก</button>
+                    <div class="modal-footer border-0 p-4 pt-0">
+                        <button type="submit" name="add_service" class="btn btn-primary rounded-pill w-100 py-3 fw-bold shadow">บันทึกข้อมูลรายการ</button>
                     </div>
                 </form>
             </div>
@@ -238,39 +238,41 @@ $res_services = $conn->query("SELECT s.*, t.svType_name FROM service s JOIN serv
             <div class="modal-content border-0 rounded-4 shadow">
                 <form method="post">
                     <input type="hidden" name="service_id" id="edit_id">
-                    <div class="modal-header border-0">
-                        <h5 class="modal-title fw-bold">📝 แก้ไขบริการ</h5>
+                    <div class="modal-header border-0 px-4 pt-4">
+                        <h5 class="modal-title fw-bold">📝 แก้ไขรายการ</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
-                    <div class="modal-body p-4">
+                    <div class="modal-body p-4 pt-0">
                         <div class="mb-3">
-                            <label class="form-label small fw-bold">ชื่อบริการ</label>
+                            <label class="form-label small fw-bold">ชื่อรายการ</label>
                             <input type="text" name="name" id="edit_name" class="form-control rounded-3" required>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label small fw-bold">ประเภทบริการ</label>
-                            <select name="type_id" id="edit_type" class="form-select rounded-3" required>
+                            <label class="form-label small fw-bold">เปลี่ยนหมวดหมู่</label>
+                            <select name="type_id" id="edit_type" class="form-select rounded-3">
                                 <?php foreach($types_array as $t): ?>
                                     <option value="<?= $t['svType_id'] ?>"><?= $t['svType_name'] ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold">ราคา (บาท)</label>
-                            <input type="number" step="0.01" name="price" id="edit_price" class="form-control rounded-3" required>
+                        <div class="row g-3 mb-3">
+                            <div class="col-6">
+                                <label class="form-label small fw-bold">ราคา</label>
+                                <input type="number" name="price" id="edit_price" class="form-control rounded-3" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-bold">โควตา</label>
+                                <input type="number" name="quota" id="edit_quota" class="form-control rounded-3">
+                            </div>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold text-primary">จำนวนชิ้นโควตา (เฉพาะรายเดือน)</label>
-                            <input type="number" name="quota" id="edit_quota" class="form-control rounded-3">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold">รายละเอียดอื่นๆ (ให้ลูกค้าเห็น)</label>
-                            <textarea name="note" id="edit_note" class="form-control rounded-3" rows="4"></textarea>
+                        <div class="mb-0">
+                            <label class="form-label small fw-bold">รายละเอียด</label>
+                            <textarea name="note" id="edit_note" class="form-control rounded-3" rows="2"></textarea>
                         </div>
                     </div>
-                    <div class="modal-footer border-0">
-                        <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">ยกเลิก</button>
-                        <button type="submit" name="edit_service" class="btn btn-primary rounded-pill px-4">บันทึกการแก้ไข</button>
+                    <div class="modal-footer border-0 p-4 pt-0 d-flex gap-2">
+                        <a href="#" id="delete_link" class="btn btn-outline-danger rounded-pill px-4 fw-bold" onclick="return confirm('ยืนยันการลบรายการนี้?')"><i class="fa fa-trash"></i></a>
+                        <button type="submit" name="edit_service" class="btn btn-primary rounded-pill flex-grow-1 py-3 fw-bold shadow">บันทึกการแก้ไข</button>
                     </div>
                 </form>
             </div>
@@ -284,18 +286,13 @@ $res_services = $conn->query("SELECT s.*, t.svType_name FROM service s JOIN serv
             editServiceModal.addEventListener('show.bs.modal', event => {
                 const button = event.relatedTarget;
                 const id = button.getAttribute('data-id');
-                const name = button.getAttribute('data-name');
-                const type = button.getAttribute('data-type');
-                const price = button.getAttribute('data-price');
-                const quota = button.getAttribute('data-quota');
-                const note = button.getAttribute('data-note');
-
                 document.getElementById('edit_id').value = id;
-                document.getElementById('edit_name').value = name;
-                document.getElementById('edit_type').value = type;
-                document.getElementById('edit_price').value = price;
-                document.getElementById('edit_quota').value = quota;
-                document.getElementById('edit_note').value = note;
+                document.getElementById('edit_name').value = button.getAttribute('data-name');
+                document.getElementById('edit_type').value = button.getAttribute('data-type');
+                document.getElementById('edit_price').value = button.getAttribute('data-price');
+                document.getElementById('edit_quota').value = button.getAttribute('data-quota');
+                document.getElementById('edit_note').value = button.getAttribute('data-note');
+                document.getElementById('delete_link').href = '?delete=' + id;
             });
         }
     </script>

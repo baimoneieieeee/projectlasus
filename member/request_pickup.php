@@ -16,17 +16,13 @@ $monthly_data = file_exists($json_file) ? json_decode(file_get_contents($json_fi
 $is_m = isset($monthly_data[$m_id]);
 
 // 🎯 1. ดึงรายการบริการพิเศษ (แบบจ่ายเงินสด)
-$res_special = $conn->query("SELECT s.*, t.svType_behavior FROM service s JOIN service_type t ON s.svType_id = t.svType_id WHERE t.svType_behavior = 'special' ORDER BY s.service_price ASC");
+$res_special = $conn->query("SELECT s.*, t.svType_behavior FROM service s JOIN service_type t ON s.svType_id = t.svType_id WHERE t.svType_behavior = 'per_piece' ORDER BY s.service_price ASC");
 $services_json = [];
 if ($res_special) {
     while($s = $res_special->fetch_assoc()) {
         $services_json[] = $s;
     }
 }
-
-// 🎯 2. ดึงรายการบริการแบบโควตา (หักจากรายเดือน)
-$res_quota_srv = $conn->query("SELECT s.* FROM service s JOIN service_type t ON s.svType_id = t.svType_id WHERE t.svType_behavior = 'quota' AND s.service_quota = 0 LIMIT 1");
-$quota_service = $res_quota_srv ? $res_quota_srv->fetch_assoc() : null;
 
 if (isset($_POST['request'])) {
     $rq_id = "RQ" . time();
@@ -81,11 +77,8 @@ if (isset($_POST['request'])) {
                     <p class="text-muted text-center small mb-4">เลือกประเภทผ้าที่ต้องการส่งเพื่อให้ร้านจัดเตรียมคิวงานครับ</p>
                     
                     <div class="alert alert-primary border-0 rounded-4 small p-3 mb-4 shadow-sm">
-                        <div class="fw-bold mb-2 text-primary"><i class="fa fa-info-circle me-1"></i> บริการที่เลือกได้:</div>
+                        <div class="fw-bold mb-2 text-primary"><i class="fa fa-info-circle me-1"></i> บริการผ้าพิเศษที่เลือกได้:</div>
                         <div class="d-flex flex-wrap gap-2">
-                            <?php if($is_m && $quota_service): ?>
-                                <span class="badge bg-white text-primary border p-2 rounded-3">🌟 ซักผ้าปกติ (หักโควตา)</span>
-                            <?php endif; ?>
                             <?php foreach($services_json as $s): ?>
                                 <span class="badge bg-white text-dark border fw-normal p-2 rounded-3">
                                     <?= htmlspecialchars($s['service_name']) ?> (฿<?= number_format($s['service_price']) ?>)
@@ -100,11 +93,6 @@ if (isset($_POST['request'])) {
                                 <label class="form-label small fw-bold">เลือกประเภทผ้า</label>
                                 <select id="service_select" class="form-select rounded-3">
                                     <option value="">-- เลือกรายการ --</option>
-                                    <?php if($is_m && $quota_service): ?>
-                                        <option value="<?= $quota_service['service_id'] ?>" data-name="ซักผ้าปกติ" data-price="0" data-is-quota="1">
-                                            🌟 ซักผ้าปกติ (ใช้โควตาสมาชิก)
-                                        </option>
-                                    <?php endif; ?>
                                     <?php foreach($services_json as $s): ?>
                                         <option value="<?= $s['service_id'] ?>" data-name="<?= htmlspecialchars($s['service_name']) ?>" data-price="<?= $s['service_price'] ?>" data-is-quota="0">
                                             <?= htmlspecialchars($s['service_name']) ?> (฿<?= number_format($s['service_price']) ?> / ชิ้น)

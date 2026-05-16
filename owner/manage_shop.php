@@ -121,6 +121,7 @@ $default_lng = $shop['shop_longitude'] ?: 100.5018;
                     </div>
 
                     <div class="col-12"><label class="form-label small fw-bold">ที่อยู่ร้านค้า (ข้อความ)</label><textarea name="address" class="form-control rounded-4" rows="2"><?= $shop['shop_address'] ?></textarea></div>
+                    
                     <div class="col-md-6"><label class="form-label small fw-bold">คิวอาร์โค้ด</label><input type="file" name="qrcode" class="form-control mb-2"><?php if($shop['shop_QRcode']): ?><img src="data:image/jpeg;base64,<?= base64_encode($shop['shop_QRcode']) ?>" class="img-thumbnail" style="max-height: 80px;"><?php endif; ?></div>
                     <div class="col-md-6"><label class="form-label small fw-bold">โลโก้</label><input type="file" name="logo" class="form-control mb-2"><?php if(file_exists('logo.png')): ?><img src="logo.png?v=<?= time() ?>" class="rounded-circle" style="width: 50px; height: 50px; object-fit: cover;"><?php endif; ?></div>
                 </div>

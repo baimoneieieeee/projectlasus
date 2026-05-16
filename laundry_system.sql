@@ -259,7 +259,7 @@ INSERT INTO `service` (`service_id`, `service_name`, `svType_id`, `service_price
 CREATE TABLE `service_type` (
   `svType_id` varchar(13) NOT NULL COMMENT 'รหัสประเภท (PK)',
   `svType_name` varchar(50) DEFAULT NULL COMMENT 'ชื่อประเภทบริการ',
-  `svType_behavior` varchar(20) DEFAULT 'special',
+  `svType_behavior` varchar(20) DEFAULT 'per_piece',
   `svType_note` text DEFAULT NULL COMMENT 'รายละเอียดประเภท'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='ตารางประเภทบริการ (ซัก, อบ, รีด)';
 
@@ -268,11 +268,11 @@ CREATE TABLE `service_type` (
 --
 
 INSERT INTO `service_type` (`svType_id`, `svType_name`, `svType_behavior`, `svType_note`) VALUES
-('T_PRO', 'รายเดือน', 'quota', ''),
-('T1', 'ซักผ้า', 'quota', ''),
-('T2', 'อบผ้า', 'special', NULL),
-('T3', 'รีดผ้า', 'special', NULL),
-('TYP1772000556', ' ซักผ้า(รายครั้ง)', 'special', '');
+('T_PRO', 'รายเดือน', 'monthly', ''),
+('T1', 'รายเดือน', 'monthly', ''),
+('T2', 'รายชิ้น', 'per_piece', NULL),
+('T3', 'รายชิ้น', 'per_piece', NULL),
+('TYP1772000556', 'รายชิ้น', 'per_piece', '');
 
 -- --------------------------------------------------------
 
