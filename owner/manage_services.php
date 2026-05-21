@@ -202,20 +202,22 @@ $res_per_piece = $conn->query("SELECT s.*, t.svType_name FROM service s JOIN ser
                         </div>
                         <div class="mb-3">
                             <label class="form-label small fw-bold text-primary">ใส่ไว้ในหมวดหมู่ไหน?</label>
-                            <select name="type_id" class="form-select rounded-3" required>
+                            <select name="type_id" id="add_type_id" class="form-select rounded-3" required onchange="toggleQuota('add')">
                                 <?php foreach($types_array as $t): ?>
-                                    <option value="<?= $t['svType_id'] ?>"><?= $t['svType_name'] ?> (<?= $t['svType_behavior'] == 'monthly' ? 'หักรายเดือน' : 'เก็บเงินรายครั้ง' ?>)</option>
+                                    <option value="<?= $t['svType_id'] ?>" data-behavior="<?= $t['svType_behavior'] ?>">
+                                        <?= $t['svType_name'] ?> (<?= $t['svType_behavior'] == 'monthly' ? 'หักรายเดือน' : 'เก็บเงินรายครั้ง' ?>)
+                                    </option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="row g-3 mb-3">
-                            <div class="col-6">
+                            <div class="col-6" id="add_price_container">
                                 <label class="form-label small fw-bold">ราคาขาย (บาท)</label>
-                                <input type="number" name="price" class="form-control rounded-3" required>
+                                <input type="number" name="price" id="add_price" class="form-control rounded-3" value="0">
                             </div>
-                            <div class="col-6">
+                            <div class="col-6" id="add_quota_container">
                                 <label class="form-label small fw-bold text-primary">จำนวนโควตา (ถ้ามี)</label>
-                                <input type="number" name="quota" class="form-control rounded-3" value="0">
+                                <input type="number" name="quota" id="add_quota" class="form-control rounded-3" value="0">
                                 <div class="smaller text-muted mt-1" style="font-size: 0.7rem;">ใส่ตัวเลขถ้าเป็น "แพ็กเกจ" ถ้าเป็นซักทั่วไปใส่ 0</div>
                             </div>
                         </div>
@@ -248,19 +250,19 @@ $res_per_piece = $conn->query("SELECT s.*, t.svType_name FROM service s JOIN ser
                             <input type="text" name="name" id="edit_name" class="form-control rounded-3" required>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label small fw-bold">เปลี่ยนหมวดหมู่</label>
-                            <select name="type_id" id="edit_type" class="form-select rounded-3">
+                            <label class="form-label small fw-bold text-primary">เปลี่ยนหมวดหมู่</label>
+                            <select name="type_id" id="edit_type" class="form-select rounded-3" onchange="toggleQuota('edit')">
                                 <?php foreach($types_array as $t): ?>
-                                    <option value="<?= $t['svType_id'] ?>"><?= $t['svType_name'] ?></option>
+                                    <option value="<?= $t['svType_id'] ?>" data-behavior="<?= $t['svType_behavior'] ?>"><?= $t['svType_name'] ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="row g-3 mb-3">
-                            <div class="col-6">
+                            <div class="col-6" id="edit_price_container">
                                 <label class="form-label small fw-bold">ราคา</label>
                                 <input type="number" name="price" id="edit_price" class="form-control rounded-3" required>
                             </div>
-                            <div class="col-6">
+                            <div class="col-6" id="edit_quota_container">
                                 <label class="form-label small fw-bold">โควตา</label>
                                 <input type="number" name="quota" id="edit_quota" class="form-control rounded-3">
                             </div>
@@ -281,6 +283,37 @@ $res_per_piece = $conn->query("SELECT s.*, t.svType_name FROM service s JOIN ser
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        function toggleQuota(mode) {
+            const select = document.getElementById(mode === 'add' ? 'add_type_id' : 'edit_type');
+            const quotaContainer = document.getElementById(mode === 'add' ? 'add_quota_container' : 'edit_quota_container');
+            const priceContainer = document.getElementById(mode === 'add' ? 'add_price_container' : 'edit_price_container');
+            const behavior = select.options[select.selectedIndex].getAttribute('data-behavior');
+            
+            if (behavior === 'monthly') {
+                // รายเดือน (บริการซักปกติ): ซ่อนทั้งราคาและโควตา
+                quotaContainer.style.display = 'none';
+                priceContainer.style.display = 'none';
+                
+                if(mode === 'add') {
+                    document.getElementById('add_price').value = 0;
+                    document.getElementById('add_quota').value = 0;
+                } else {
+                    document.getElementById('edit_price').value = 0;
+                    document.getElementById('edit_quota').value = 0;
+                }
+            } else {
+                // รายชิ้น (เก็บเงินสดเพิ่ม): โชว์เฉพาะราคา ซ่อนโควตา
+                quotaContainer.style.display = 'none';
+                priceContainer.style.display = 'block';
+                
+                if(mode === 'add') {
+                    document.getElementById('add_quota').value = 0;
+                } else {
+                    document.getElementById('edit_quota').value = 0;
+                }
+            }
+        }
+
         const editServiceModal = document.getElementById('editServiceModal');
         if (editServiceModal) {
             editServiceModal.addEventListener('show.bs.modal', event => {
@@ -293,6 +326,16 @@ $res_per_piece = $conn->query("SELECT s.*, t.svType_name FROM service s JOIN ser
                 document.getElementById('edit_quota').value = button.getAttribute('data-quota');
                 document.getElementById('edit_note').value = button.getAttribute('data-note');
                 document.getElementById('delete_link').href = '?delete=' + id;
+                
+                // เรียกใช้งาน toggleQuota ทันทีที่เปิด Modal แก้ไข
+                toggleQuota('edit');
+            });
+        }
+
+        const addServiceModal = document.getElementById('addServiceModal');
+        if (addServiceModal) {
+            addServiceModal.addEventListener('show.bs.modal', () => {
+                toggleQuota('add');
             });
         }
     </script>

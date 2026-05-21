@@ -112,10 +112,48 @@ $shop = $conn->query("SELECT * FROM shop LIMIT 1")->fetch_assoc();
                         <div class="fw-bold text-dark"><?= htmlspecialchars($order['m_name']) ?></div>
                     </div>
                     <div class="col-6 ps-3">
-                        <div class="info-label">วันที่</div>
+                        <div class="info-label">วันที่แจ้ง</div>
                         <div class="fw-bold text-dark"><?= date('d/m/Y H:i', strtotime($order['order_date'])) ?></div>
                     </div>
                 </div>
+
+                <?php if(!empty($order['order_est_pickup'])): ?>
+                <div class="mb-3 p-3 bg-light rounded-3 border">
+                    <div class="info-label mb-2 text-primary border-bottom pb-1"><i class="fa fa-calendar-check me-1"></i> รายละเอียดการนัดหมาย</div>
+                    <?php 
+                        $thai_months = [
+                            1 => 'มกราคม', 2 => 'กุมภาพันธ์', 3 => 'มีนาคม', 4 => 'เมษายน',
+                            5 => 'พฤษภาคม', 6 => 'มิถุนายน', 7 => 'กรกฎาคม', 8 => 'สิงหาคม',
+                            9 => 'กันยายน', 10 => 'ตุลาคม', 11 => 'พฤศจิกายน', 12 => 'ธันวาคม'
+                        ];
+                        $times = explode('|', $order['order_est_pickup']);
+                        foreach($times as $t):
+                            $t = trim($t);
+                            if(empty($t)) continue;
+
+                            // พยายามแยก Label และ Datetime
+                            if (preg_match('/(.*?):\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})/', $t, $matches)) {
+                                $label = $matches[1];
+                                $ts = strtotime($matches[2]);
+                                $d = date('j', $ts);
+                                $m = $thai_months[(int)date('n', $ts)];
+                                $y = (int)date('Y', $ts) + 543;
+                                $time = date('H:i', $ts);
+                                $display_text = "$label: วันที่ $d $m $y เวลา $time น.";
+                            } else {
+                                $display_text = $t;
+                            }
+
+                            $icon = (strpos($t, 'นัดรับ') !== false) ? 'fa-truck-pickup' : 'fa-paper-plane';
+                            $color = (strpos($t, 'นัดรับ') !== false) ? 'text-primary' : 'text-success';
+                    ?>
+                        <div class="d-flex align-items-start mb-1">
+                            <i class="fa <?= $icon ?> <?= $color ?> me-2 mt-1" style="width: 20px;"></i>
+                            <div class="fw-bold text-dark" style="font-size: 0.8rem;"><?= htmlspecialchars($display_text) ?></div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
 
                 <div class="bg-light bg-opacity-50 rounded-3 p-3 mb-3">
                     <div class="d-flex justify-content-between info-label mb-2 border-bottom pb-1">
@@ -146,7 +184,7 @@ $shop = $conn->query("SELECT * FROM shop LIMIT 1")->fetch_assoc();
 
                 <?php if(!empty($order['order_owner_note'])): ?>
                     <div class="p-3 bg-warning bg-opacity-10 rounded-3 border-start border-warning border-3 mb-3">
-                        <div class="info-label text-warning mb-1">นัดหมายส่งคืน</div>
+                        <div class="info-label text-warning mb-1">หมายเหตุ</div>
                         <div class="fw-bold text-dark smaller"><?= htmlspecialchars($order['order_owner_note']) ?></div>
                     </div>
                 <?php endif; ?>

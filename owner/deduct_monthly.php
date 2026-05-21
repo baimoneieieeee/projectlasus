@@ -54,70 +54,63 @@ if (isset($_POST['use_quota'])) {
         $old_order_items_count = (int)$old_order['order_items_count'];
         
         // --- 🚩 2. คำนวณยอดเงินรวมใหม่ ---
-        $base_price = 0;
+        $pkg_base_price = 0; // ราคาตัวแพ็กเกจ (ถ้ามี)
+        $per_piece_total = 0; // ราคารวมของผ้าที่คิดเป็นรายชิ้นปกติ
+        
         if(strpos($order_id, 'PKG') === 0) {
-            // ค้นหาราคาจากโน้ตเดิม (เช่น ราคา 500 บาท)
             preg_match('/ราคา (\d+) บาท/', $old_order['order_note'], $matches);
-            $base_price = isset($matches[1]) ? (float)$matches[1] : 0;
-        } else {
-            // สำหรับออเดอร์รายครั้ง ให้เอาราคาที่ร้านค้ากรอกมาเป็นราคาตั้งต้น
-            $base_price = isset($_POST['service_price']) ? (float)$_POST['service_price'] : 0;
+            $pkg_base_price = isset($matches[1]) ? (float)$matches[1] : 0;
         }
 
-        // ยอดรวมใหม่ = ราคาตั้งต้น + ค่าส่ง + ยอดบวกเพิ่มใหม่
-        $new_total_sum = $base_price + (float)$old_order['order_shipping_fee'] + $extra_cash;
+        // วนลูปเช็คราคารายชิ้นปกติจากรายการที่เลือกมา
+        $sum_item_prices = 0;
+        if (!empty($items_to_save)) {
+            foreach ($items_to_save as $item) {
+                $sid = $conn->real_escape_string($item['service_id']);
+                $srv_p_res = $conn->query("SELECT service_price, svType_id FROM service WHERE service_id = '$sid'");
+                $srv_data = $srv_p_res->fetch_assoc();
+                $srv_p = (float)($srv_data['service_price'] ?? 0);
+                
+                // เช็คประเภทบริการ (ถ้าไม่ใช่รายเดือน ให้บวกเข้ายอดรายชิ้นปกติ)
+                $sum_item_prices += ($srv_p * $item['qty']);
+            }
+        }
+
+        // คำนวณหายอด "บวกเพิ่มจริงๆ" (เช่น ค่าซักเกินโควตา)
+        // ยอด extra_cash จากหน้าเว็บคือ (ราคารายชิ้น + ค่าซักเกินโควตา)
+        // เราต้องลบราคารายชิ้นออกเพื่อให้เหลือแค่ค่าซักเกินจริงๆ เพื่อลงช่อง order_extra_cash
+        $real_extra_surcharge = $extra_cash - $sum_item_prices;
+        if ($real_extra_surcharge < 0) $real_extra_surcharge = 0;
+
+        // ยอดรวมสุทธิ = (ราคาแพ็กเกจ + ราคารายชิ้น) + ค่าส่ง + ยอดบวกเพิ่มจริงๆ
+        $new_total_sum = $pkg_base_price + $sum_item_prices + (float)$old_order['order_shipping_fee'] + $real_extra_surcharge;
         
-        // สรุปหมายเหตุ: ใช้จากที่ร้านกรอกมาโดยตรง (ซึ่ง UI สรุปให้แล้ว)
         $final_note = $summary_note;
-        
         if(strpos($order_id, 'PKG') === 0) {
-             // สำหรับ PKG ให้คงชื่อแพ็กเกจในบรรทัดแรกไว้
              $lines = explode("\n", trim($old_order['order_note']));
              $pkg_name = $lines[0];
              $final_note = $pkg_name . "\n" . $summary_note;
         }
 
-        // ดึงข้อมูลรอบปัจจุบันมาใส่ด้วย
+        // ... (ส่วนการจัดการ JSON คงเดิม) ...
         $json_file = __DIR__ . '/../config/monthly_data.json';
         $monthly_data = file_exists($json_file) ? json_decode(file_get_contents($json_file), true) : [];
         
         $current_pickups = 0;
         $is_pkg_order = (strpos($order_id, 'PKG') === 0);
         
-        // --- 🚩 อัปเดตโควตาใน JSON เฉพาะเมื่อเป็นการบันทึกครั้งแรก (order_items_count เดิมเป็น 0) ---
-        // และต้องไม่ใช่บิล PKG เพราะบิล PKG จะไปหักและนับรอบที่ 1 ใน confirm_payment.php อยู่แล้ว
         if (!$is_pkg_order && $old_order_items_count == 0 && $quota_deduct > 0 && isset($monthly_data[$m_id])) {
             $current_pickups = (int)($monthly_data[$m_id]['pickups_used'] ?? 0);
-            
-            // หักโควตา
             $monthly_data[$m_id]['quota'] -= $quota_deduct;
-            
-            // เพิ่มรอบการใช้งาน (นับ 1-4)
-            if ($current_pickups >= 4) {
-                $current_pickups = 1; 
-            } else {
-                $current_pickups += 1;
-            }
-            
+            if ($current_pickups >= 4) { $current_pickups = 1; } else { $current_pickups += 1; }
             $monthly_data[$m_id]['pickups_used'] = $current_pickups;
             $monthly_data[$m_id]['updated_at'] = date("Y-m-d H:i:s");
             file_put_contents($json_file, json_encode($monthly_data, JSON_PRETTY_PRINT));
         } else if (isset($monthly_data[$m_id])) {
-            // ถ้าเป็นบิล PKG หรือเป็นการอัปเดต ให้ดึงรอบปัจจุบันจาก JSON มาใช้
             $current_pickups = (int)($monthly_data[$m_id]['pickups_used'] ?? 0);
-            
-            // 🚩 [สำคัญ] ถ้าไม่ได้มีการหักโควตาจริง (quota_deduct == 0) ให้รอบเป็น 0
-            // เพื่อให้ระบบแยกไปอยู่ในส่วน "ซักรายครั้ง" ในหน้าบ้านลูกค้าครับ
-            if ($quota_deduct <= 0 && !$is_pkg_order) {
-                $current_pickups = 0;
-            }
-
-            // กรณีพิเศษ: ถ้าเป็นบิล PKG และมีการซักผ้ามาด้วย ให้ถือว่าเป็นรอบที่ 1 เสมอ
-            if ($is_pkg_order && $quota_deduct > 0) {
-                $current_pickups = 1;
-            }
+            if ($quota_deduct <= 0 && !$is_pkg_order) { $current_pickups = 0; }
+            if ($is_pkg_order && $quota_deduct > 0) { $current_pickups = 1; }
         } else {
-            // ถ้าไม่ใช่สมาชิก ให้รอบเป็น 0 เสมอ
             $current_pickups = 0;
         }
 
@@ -129,22 +122,17 @@ if (isset($_POST['use_quota'])) {
                 order_items_count = $quota_deduct, 
                 order_note = '$final_note',
                 order_extra_note = '$extra_note',
-                order_extra_cash = $extra_cash,
+                order_extra_cash = $real_extra_surcharge,
                 order_pickup_round = $current_pickups,
                 order_owner_note = '$owner_note'
                 WHERE order_id = '$order_id'";
         
         if ($conn->query($sql)) {
-            // --- 🧺 3. บันทึกรายการลงตาราง item (ความยาว ID ไม่เกิน 13 หลัก) ---
             $conn->query("DELETE FROM item WHERE order_id = '$order_id'");
-
             $id_base = substr($order_id, 3);
-
-            // ดึงรหัสบริการเริ่มต้นสำหรับเคส "งานซักทั่วไป" เพื่อป้องกัน Error
             $default_srv_res = $conn->query("SELECT service_id FROM service LIMIT 1");
             $default_srv_id = ($default_srv_res->num_rows > 0) ? $default_srv_res->fetch_assoc()['service_id'] : '';
 
-            // รายการซักหลัก (บันทึกแยกรายชิ้นตามที่กรอก)
             if (!empty($items_to_save)) {
                 foreach ($items_to_save as $idx => $item) {
                     $itm_id = $id_base . sprintf("%03d", $idx + 1);
@@ -152,8 +140,7 @@ if (isset($_POST['use_quota'])) {
                     $sid = $conn->real_escape_string($item['service_id']);
                     $conn->query("INSERT INTO item (item_id, order_id, item_name, service_id, item_amount) VALUES ('$itm_id', '$order_id', '$it_name', '$sid', {$item['qty']})");
                 }
-            } else if($quota_deduct > 0 || $base_price > 0) {
-                // กรณีไม่ได้กรอกแยกย่อยมา ให้บันทึกเป็นก้อนเดียวเหมือนเดิม
+            } else if($quota_deduct > 0 || $pkg_base_price > 0) {
                 $item_id_main = $id_base . "001";
                 $qty = ($quota_deduct > 0) ? $quota_deduct : 1;
                 if ($default_srv_id !== "") {
@@ -161,14 +148,12 @@ if (isset($_POST['use_quota'])) {
                 }
             }
 
-            // รายการบวกเพิ่ม
-            if($extra_cash > 0 && $default_srv_id !== "") {
+            // --- 🚩 บันทึกเฉพาะ "ยอดส่วนเกิน" จริงๆ (เช่น ค่าซักเกินโควตา) ---
+            if($real_extra_surcharge > 0 && $default_srv_id !== "") {
                 $item_id_extra = $id_base . "999"; 
-                // ค้นหารหัสบริการ "ผ้านวม" หรือ "บริการบวกเพิ่ม" ถ้าไม่มีให้ใช้ Default
-                $srv_q = $conn->query("SELECT service_id FROM service WHERE service_name LIKE '%ผ้านวม%' OR service_name LIKE '%บวกเพิ่ม%' LIMIT 1");
+                $srv_q = $conn->query("SELECT service_id FROM service WHERE service_name LIKE '%บวกเพิ่ม%' OR service_name LIKE '%ผ้านวม%' LIMIT 1");
                 $srv_id = ($srv_q->num_rows > 0) ? $srv_q->fetch_assoc()['service_id'] : $default_srv_id;
-                
-                $it_extra_name = 'บริการบวกเพิ่ม';
+                $it_extra_name = 'ค่าซักเกินโควตา/ส่วนต่าง';
                 $conn->query("INSERT INTO item (item_id, order_id, item_name, service_id, item_amount) VALUES ('$item_id_extra', '$order_id', '$it_extra_name', '$srv_id', 1)");
             }
 

@@ -46,6 +46,7 @@ $extra_price_per_piece = (int)($shop_q['shop_extra_price'] ?? 10);
     <title>จัดการสมาชิกรายเดือน - Laundry</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600;700&display=swap');
         :root { --primary: #2563eb; --bg: #f8fafc; }
@@ -55,6 +56,8 @@ $extra_price_per_piece = (int)($shop_q['shop_extra_price'] ?? 10);
         .quota-badge { font-size: 1.1rem; font-weight: 700; color: #2563eb; }
         .item-row-select { background: #f8fafc; border-radius: 12px; padding: 10px; margin-bottom: 8px; border: 1px solid #e2e8f0; }
         @media (max-width: 991px) { .main-content { margin-left: 0; padding: 20px; } }
+        /* Flatpickr Custom */
+        .flatpickr-calendar { border-radius: 15px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
     </style>
 </head>
 <body>
@@ -185,10 +188,21 @@ $extra_price_per_piece = (int)($shop_q['shop_extra_price'] ?? 10);
                             </div>
                         </div>
 
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold">เวลานัดส่งคืน:</label>
-                            <input type="text" name="owner_note" class="form-control rounded-3 border-light shadow-sm" placeholder="เช่น วันพรุ่งนี้ 10:00 น.">
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label small fw-bold text-muted"><i class="fa fa-truck-pickup me-1"></i> เวลานัดรับผ้า</label>
+                                <input type="text" name="est_pickup" class="form-control rounded-3 border-light shadow-sm datetime-picker" value="<?= date('Y-m-d H:i') ?>">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-bold text-muted"><i class="fa fa-paper-plane me-1"></i> เวลานัดส่งคืน</label>
+                                <input type="text" name="est_delivery" class="form-control rounded-3 border-light shadow-sm datetime-picker" value="<?= date('Y-m-d H:i') ?>">
+                            </div>
                         </div>
+
+                        <!-- <div class="mb-3">
+                            <label class="form-label small fw-bold">หมายเหตุ:</label>
+                            <input type="text" name="owner_note" class="form-control rounded-3 border-light shadow-sm" placeholder="ระบุข้อความเพิ่มเติม (ถ้ามี)">
+                        </div> -->
 
                         <div class="row g-2">
                             <div class="col-6">
@@ -211,10 +225,23 @@ $extra_price_per_piece = (int)($shop_q['shop_extra_price'] ?? 10);
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/th.js"></script>
     <script>
         const services = <?= json_encode($services_list) ?>;
         const deductModal = new bootstrap.Modal(document.getElementById('deductModal'));
         let current_quota = 0;
+
+        // ตั้งค่า Flatpickr ภาษาไทย
+        flatpickr(".datetime-picker", {
+            locale: "th",
+            enableTime: true,
+            dateFormat: "Y-m-d H:i",
+            time_24hr: true,
+            minTime: "09:00",
+            maxTime: "18:00",
+            disableMobile: "true"
+        });
         
         function addItemRow(srvId = '', qty = 1) {
             const container = document.getElementById('item_list_container');

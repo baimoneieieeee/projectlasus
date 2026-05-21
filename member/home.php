@@ -327,14 +327,22 @@ $s_color = [0=>'bg-secondary', 1=>'bg-warning text-dark', 2=>'bg-info', 3=>'bg-p
                                             $qty = isset($m[1]) ? $m[1] : 0;
                                         }
 
+                                        // ดึงเลขรอบมาแสดงในช่องการใช้สิทธิ์ด้วย
+                                        $r_val = (int)$o['order_pickup_round'];
+                                        if($r_val == 0 && (strpos($o['order_note'], 'หักโควตา') !== false)) $r_val = $my_pickups;
+                                        $c_round = ($r_val > 0) ? ($r_val % 4 ?: 4) : 0;
+
                                         if(strpos($o['order_id'], 'PKG') === 0): ?>
                                             <?php if($qty > 0): ?>
-                                                <div class="smaller fw-bold text-success"><i class="fa fa-plus-circle"></i> รอบที่1</div>
+                                                <div class="smaller fw-bold text-success"><i class="fa fa-plus-circle"></i> รอบที่ 1</div>
                                                 <div class="smaller fw-bold text-primary"><i class="fa fa-cut"></i> รับผ้าจำนวน <?= $qty ?> ชิ้น</div>
                                             <?php else: ?>
                                                 <div class="smaller fw-bold text-success"><i class="fa fa-plus-circle"></i> เริ่มต้นแพ็กเกจรายเดือน</div>
                                             <?php endif; ?>
                                         <?php else: ?>
+                                            <?php if($c_round > 0): ?>
+                                                <div class="smaller fw-bold text-success"><i class="fa fa-sync-alt"></i> รอบที่ <?= $c_round ?></div>
+                                            <?php endif; ?>
                                             <div class="smaller fw-bold text-primary"><i class="fa fa-cut"></i> รับผ้าจำนวน <?= $qty ?> ชิ้น</div>
                                         <?php endif; ?>
                                     </td>

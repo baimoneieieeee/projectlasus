@@ -13,30 +13,6 @@ $shop = $conn->query("SELECT * FROM shop LIMIT 1")->fetch_assoc();
 $date_start = $_GET['start_date'] ?? date('Y-m-01'); 
 $date_end = $_GET['end_date'] ?? date('Y-m-d');    
 
-// 1.1 จัดการการบันทึกค่าใช้จ่าย
-if (isset($_POST['add_expense'])) {
-    $exp_name = $conn->real_escape_string($_POST['exp_name']);
-    $exp_amount = (float)$_POST['exp_amount'];
-    $exp_date = $_POST['exp_date'] ?: date('Y-m-d H:i:s');
-    $exp_note = $conn->real_escape_string($_POST['exp_note'] ?? '');
-    
-    // บันทึกลงตาราง payment โดยระบุ payment_type = 1 (รายจ่าย)
-    $sql_add = "INSERT INTO payment (payment_name, payment_amount, payment_date, payment_note, payment_type) 
-                VALUES ('$exp_name', $exp_amount, '$exp_date', '$exp_note', 1)";
-    $conn->query($sql_add);
-    header("Location: reports.php?start_date=$date_start&end_date=$date_end");
-    exit;
-}
-
-// 1.2 ลบค่าใช้จ่าย
-if (isset($_GET['del_exp'])) {
-    $exp_id = (int)$_GET['del_exp'];
-    // ลบจากตาราง payment โดยต้องเป็นรายจ่าย (type=1) เท่านั้นเพื่อความปลอดภัย
-    $conn->query("DELETE FROM payment WHERE payment_id = $exp_id AND payment_type = 1");
-    header("Location: reports.php?start_date=$date_start&end_date=$date_end");
-    exit;
-}
-
 // 2. ดึงรายการเดินบัญชีละเอียด (ออเดอร์)
 $sql_ledger = "SELECT o.*, m.m_name, m.m_lastname 
                FROM orders o 
@@ -45,15 +21,6 @@ $sql_ledger = "SELECT o.*, m.m_name, m.m_lastname
                AND o.order_status >= 1
                ORDER BY o.order_date DESC";
 $res_ledger = $conn->query($sql_ledger);
-
-// 2.1 ดึงรายการค่าใช้จ่าย จากตาราง payment (type=1)
-$sql_exp = "SELECT payment_id as exp_id, payment_name as exp_name, payment_amount as exp_amount, 
-                   payment_date as exp_date, payment_note as exp_note 
-            FROM payment 
-            WHERE payment_type = 1 
-            AND DATE(payment_date) BETWEEN '$date_start' AND '$date_end'
-            ORDER BY payment_date DESC";
-$res_exp = $conn->query($sql_exp);
 
 // 3. คำนวณยอดสรุป (รายรับ)
 $total_base = 0; $total_extra = 0; $total_shipping = 0; $total_grand = 0; $order_count = 0;
@@ -67,22 +34,12 @@ while($row = $res_ledger->fetch_assoc()) {
     $order_count++;
     $ledger_data[] = array_merge($row, ['base'=>$base, 'extra'=>$extra, 'shipping'=>$shipping]);
 }
-
-// 4. คำนวณยอดสรุป (ค่าใช้จ่าย)
-$total_expense = 0;
-$expense_data = [];
-while($row = $res_exp->fetch_assoc()) {
-    $total_expense += (float)$row['exp_amount'];
-    $expense_data[] = $row;
-}
-
-$net_profit = $total_grand - $total_expense;
 ?>
 <!doctype html>
 <html lang="th">
 <head>
     <meta charset="utf-8">
-    <title>Accounting Dashboard - <?= htmlspecialchars($shop['shop_name1']) ?></title>
+    <title>รายงานสรุปรายรับ - <?= htmlspecialchars($shop['shop_name1']) ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <style>
@@ -134,64 +91,106 @@ $net_profit = $total_grand - $total_expense;
         @media (max-width: 991px) { .main-content { margin-left: 0; padding: 20px; } }
         
         @media print {
-            @page { size: A4; margin: 1.5cm; }
-            .no-print { display: none !important; }
-            .main-content { margin-left: 0 !important; padding: 0 !important; width: 100% !important; }
-            body { background: white !important; font-size: 10pt !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            .glass-card { 
-                box-shadow: none !important; 
-                border: 1px solid #ddd !important; 
-                border-radius: 10px !important; 
-                padding: 15px !important;
-                margin-bottom: 10px !important;
-                background-color: #fff !important;
+            @page { 
+                size: A4; 
+                margin: 0; /* ลบหัวกระดาษ/ท้ายกระดาษของเบราว์เซอร์ (URL/วันที่/ชื่อเว็บ) */
             }
-            .stat-icon { display: none !important; } /* ซ่อนไอคอนตอนพิมพ์เพื่อประหยัดหมึกและพื้นที่ */
-            .print-header { display: block !important; border-bottom: 3px solid #000 !important; margin-bottom: 30px !important; padding: 0 0 20px 0 !important; }
+            .no-print { display: none !important; }
+            .only-print { display: block !important; }
             
-            /* บังคับให้การ์ดสรุปผลเรียง 4 คอลัมน์ */
-            .row.g-4 { display: flex !important; flex-wrap: nowrap !important; margin: 0 -5px !important; }
-            .col-xl-3 { width: 25% !important; padding: 0 5px !important; flex: 0 0 auto !important; }
+            body { 
+                background: white !important; 
+                margin: 0 !important; 
+                padding: 2.5cm 2cm 2cm 3cm !important; /* ตั้งขอบกระดาษจริงที่นี่ (ซ้าย 3, ขวา 2, บน 2.5, ล่าง 2) */
+                width: 100% !important;
+                font-family: 'TH Sarabun New', 'Sarabun', serif !important; 
+                font-size: 16pt !important; 
+                color: black !important;
+                line-height: 1.2 !important;
+            }
             
-            .h3 { font-size: 1.2rem !important; }
-            .h4 { font-size: 1.1rem !important; }
+            .main-content { margin: 0 !important; padding: 0 !important; width: 100% !important; }
             
-            /* ปรับตารางให้ดูเป็นทางการ */
-            .custom-table { border-spacing: 0 !important; width: 100% !important; border: 1px solid #eee !important; }
-            .custom-table tbody tr { background: transparent !important; box-shadow: none !important; border-bottom: 1px solid #eee !important; }
-            .custom-table td, .custom-table th { padding: 8px 10px !important; border: 1px solid #eee !important; border-radius: 0 !important; }
-            .money-text { font-size: 11pt !important; }
+            .glass-card, .card, .border, .shadow-sm { 
+                box-shadow: none !important; border: none !important; border-radius: 0 !important; 
+                padding: 0 !important; background: transparent !important;
+            }
+
+            .badge { border: none !important; padding: 0 !important; background: transparent !important; color: black !important; font-size: 16pt !important; }
+            .stat-icon, .btn { display: none !important; }
+
+            /* ส่วนหัวแบบรายงานสรุปบัญชีร้าน */
+            .report-title { font-size: 24pt; font-weight: bold; margin-bottom: 20px; text-align: center; color: black !important; }
+            .report-info { margin-bottom: 20px; font-size: 16pt; color: black !important; border-bottom: 2px solid black; padding-bottom: 15px; }
+            .report-line { margin-bottom: 5px; display: flex; justify-content: space-between; }
             
-            .text-primary, .text-danger, .text-success { color: black !important; } /* พิมพ์ขาวดำชัดๆ หรือจะคงสีไว้ก็ได้ */
-            .bg-dark { background-color: #f8f9fa !important; color: black !important; border: 1px solid #000 !important; }
+            /* สรุปยอด */
+            .text-summary-box { margin: 20px 0; padding: 15px; border: 1px solid black; font-size: 16pt; line-height: 1.6; }
+            
+            /* ตารางขาวดำเส้นตรง */
+            .custom-table { border-collapse: collapse !important; width: 100% !important; margin-top: 10px !important; border: 1px solid black !important; font-size: 16pt !important; color: black !important; }
+            .custom-table thead th { 
+                background-color: #f8f9fa !important; border: 1px solid black !important; 
+                color: black !important; font-weight: bold !important; text-align: center !important; padding: 6px !important;
+            }
+            .custom-table tbody tr { border-bottom: 1px solid black !important; background: transparent !important; }
+            .custom-table td { border: 1px solid black !important; padding: 6px !important; vertical-align: top !important; color: black !important; }
+            
+            .text-primary, .text-danger, .text-success, .text-dark { color: black !important; }
+            .money-text { font-family: 'TH Sarabun New', serif !important; font-weight: normal !important; }
+
+            .signature-section { margin-top: 60px; display: flex; justify-content: space-between; page-break-inside: avoid; }
+            .sig-box { width: 45%; text-align: center; }
+            .sig-line { border-bottom: 1px dotted black; display: inline-block; width: 70%; margin-top: 25px; margin-bottom: 5px; }
         }
-        .print-header { display: none; padding: 40px; border-bottom: 2px solid #333; margin-bottom: 40px; }
+        .report-header, .signature-section { display: none; }
+        .only-print { display: none; }
     </style>
 </head>
 <body>
     <div class="no-print"><?php include 'sidebar.php'; ?></div>
 
     <div class="main-content">
-        <!-- Print Header -->
-        <div class="print-header">
-            <div class="row align-items-center">
-                <div class="col-8">
-                    <h1 class="fw-bold text-primary mb-1"><?= htmlspecialchars($shop['shop_name1']) ?></h1>
-                    <p class="mb-0 text-muted"><?= htmlspecialchars($shop['shop_address']) ?></p>
-                    <p class="small text-muted">โทร: <?= $shop['shop_tel'] ?></p>
+        <!-- Print Header (Professional Business Style) -->
+        <div class="only-print">
+            <div class="report-title">รายงานสรุปรายรับ ประจำร้าน</div>
+            <div class="report-info">
+                <div class="report-line">
+                    <span><strong>ชื่อร้าน:</strong> <?= htmlspecialchars($shop['shop_name1']) ?></span>
+                    <span><strong>เลขที่เอกสารอ้างอิง:</strong> ...................................</span>
                 </div>
-                <div class="col-4 text-end">
-                    <h3 class="fw-bold">รายงานสรุปรายได้-ค่าใช้จ่าย</h3>
-                    <p class="mb-0"><?= date('d/m/Y', strtotime($date_start)) ?> - <?= date('d/m/Y', strtotime($date_end)) ?></p>
+                <div class="report-line">
+                    <span><strong>ที่อยู่:</strong> <?= htmlspecialchars($shop['shop_address']) ?></span>
+                    <span><strong>โทร:</strong> <?= htmlspecialchars($shop['shop_tel']) ?></span>
+                </div>
+                <?php 
+                    $thai_months = [1=>'มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+                    $s_ts = strtotime($date_start);
+                    $e_ts = strtotime($date_end);
+                ?>
+                <div class="report-line" style="margin-top: 10px; font-weight: bold;">
+                    <span>ช่วงเวลาสรุปผล: <?= date('j', $s_ts) . " " . $thai_months[(int)date('n', $s_ts)] . " " . (date('Y', $s_ts)+543) ?> ถึง <?= date('j', $e_ts) . " " . $thai_months[(int)date('n', $e_ts)] . " " . (date('Y', $e_ts)+543) ?></span>
+                    <span>วันที่พิมพ์เอกสาร: <?= date('j') . " " . $thai_months[(int)date('n')] . " " . (date('Y')+543) ?></span>
                 </div>
             </div>
+            
+            <p style="font-size: 16pt;"><strong>บทสรุปผู้บริหาร (Summary)</strong></p>
+            <div class="text-summary-box">
+                ๑. จำนวนรายการสั่งซื้อทั้งหมด: <?= number_format($order_count) ?> รายการ<br>
+                ๒. รวมยอดค่าบริการหลัก: <?= number_format($total_base, 2) ?> บาท<br>
+                ๓. รวมยอดชำระเพิ่มเติม: <?= number_format($total_extra, 2) ?> บาท<br>
+                ๔. รวมยอดค่าจัดส่งสินค้า: <?= number_format($total_shipping, 2) ?> บาท<br>
+                <strong>๕. รวมรายรับสุทธิทั้งสิ้น: <?= number_format($total_grand, 2) ?> บาท</strong>
+            </div>
+
+            <p style="font-size: 16pt; margin-top: 20px;"><strong>รายละเอียดรายการรับเงิน</strong></p>
         </div>
 
         <!-- Dashboard Header -->
         <div class="d-flex flex-wrap justify-content-between align-items-center mb-5 no-print">
             <div>
-                <h2 class="fw-bold text-dark mb-1" style="font-family: 'Chakra Petch';">Accounting Dashboard</h2>
-                <p class="text-secondary mb-0">ยินดีต้อนรับกลับมา, ตรวจสอบรายได้ของร้านวันนี้</p>
+                <h2 class="fw-bold text-dark mb-1" style="font-family: 'Chakra Petch';">Revenue Dashboard</h2>
+                <p class="text-secondary mb-0">ตรวจสอบสถิติรายได้และออเดอร์ของทางร้าน</p>
             </div>
             <div class="d-flex gap-3 mt-3 mt-md-0">
                 <button onclick="window.print()" class="btn btn-white glass-card px-4 py-2 fw-bold text-dark">
@@ -229,33 +228,26 @@ $net_profit = $total_grand - $total_expense;
         </div>
 
         <!-- Summary Widgets -->
-        <div class="row g-4 mb-5">
-            <div class="col-xl-3 col-sm-6">
-                <div class="glass-card p-4 border-start border-primary border-5">
+        <div class="row g-4 mb-5 no-print">
+            <div class="col-md-4">
+                <div class="glass-card p-4 border-start border-primary border-5 h-100">
                     <div class="stat-icon bg-primary bg-opacity-10 text-primary"><i class="fa fa-shopping-cart"></i></div>
                     <div class="text-secondary small fw-bold mb-1">จำนวนออเดอร์</div>
                     <div class="h3 fw-bold money-text mb-0"><?= number_format($order_count) ?> <span class="fs-6 fw-normal">รายการ</span></div>
                 </div>
             </div>
-            <div class="col-xl-3 col-sm-6">
-                <div class="glass-card p-4 border-start border-success border-5">
+            <div class="col-md-4">
+                <div class="glass-card p-4 border-start border-success border-5 h-100">
                     <div class="stat-icon bg-success bg-opacity-10 text-success"><i class="fa fa-wallet"></i></div>
-                    <div class="text-secondary small fw-bold mb-1">รายได้รวม (Revenue)</div>
+                    <div class="text-secondary small fw-bold mb-1">รายได้รวมสุทธิ (Revenue)</div>
                     <div class="h3 fw-bold money-text mb-0 text-success">฿<?= number_format($total_grand, 2) ?></div>
                 </div>
             </div>
-            <div class="col-xl-3 col-sm-6">
-                <div class="glass-card p-4 border-start border-danger border-5">
-                    <div class="stat-icon bg-danger bg-opacity-10 text-danger"><i class="fa fa-minus-circle"></i></div>
-                    <div class="text-secondary small fw-bold mb-1">ค่าใช้จ่ายรวม (Expenses)</div>
-                    <div class="h3 fw-bold money-text mb-0 text-danger">฿<?= number_format($total_expense, 2) ?></div>
-                </div>
-            </div>
-            <div class="col-xl-3 col-sm-6">
-                <div class="glass-card p-4 bg-dark text-white shadow-lg">
-                    <div class="stat-icon bg-white bg-opacity-20 text-white"><i class="fa fa-chart-line"></i></div>
-                    <div class="text-white text-opacity-75 small fw-bold mb-1">กำไรสุทธิ (Net Profit)</div>
-                    <div class="h3 fw-bold money-text mb-0">฿<?= number_format($net_profit, 2) ?></div>
+            <div class="col-md-4">
+                <div class="glass-card p-4 border-start border-warning border-5 h-100">
+                    <div class="stat-icon bg-warning bg-opacity-10 text-warning"><i class="fa fa-chart-pie"></i></div>
+                    <div class="text-secondary small fw-bold mb-1">เฉลี่ยต่อออเดอร์</div>
+                    <div class="h3 fw-bold money-text mb-0">฿<?= $order_count > 0 ? number_format($total_grand / $order_count, 2) : '0.00' ?></div>
                 </div>
             </div>
         </div>
@@ -281,52 +273,8 @@ $net_profit = $total_grand - $total_expense;
             </div>
         </div>
 
-        <!-- Expense Table Section -->
-        <div class="d-flex justify-content-between align-items-center mb-4 mt-5">
-            <h4 class="fw-bold mb-0" style="font-family: 'Chakra Petch';">รายการค่าใช้จ่าย (Expenses)</h4>
-            <button class="btn btn-danger btn-modern no-print" data-bs-toggle="modal" data-bs-target="#expenseModal">
-                <i class="fa fa-plus me-2"></i> เพิ่มค่าใช้จ่าย
-            </button>
-        </div>
-
-        <div class="table-responsive">
-            <table class="table custom-table">
-                <thead>
-                    <tr>
-                        <th>วัน/เวลา</th>
-                        <th>รายการ</th>
-                        <th>หมายเหตุ</th>
-                        <th class="text-end">จำนวนเงิน</th>
-                        <th class="text-center no-print">จัดการ</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if (empty($expense_data)): ?>
-                        <tr><td colspan="5" class="text-center py-5 text-muted small">ไม่พบรายการค่าใช้จ่ายในช่วงเวลานี้</td></tr>
-                    <?php endif; ?>
-                    <?php foreach($expense_data as $exp): ?>
-                    <tr>
-                        <td class="small text-secondary">
-                            <div class="fw-bold text-dark"><?= date('d M Y', strtotime($exp['exp_date'])) ?></div>
-                            <div><?= date('H:i', strtotime($exp['exp_date'])) ?> น.</div>
-                        </td>
-                        <td><div class="fw-bold"><?= htmlspecialchars($exp['exp_name']) ?></div></td>
-                        <td class="small text-secondary"><?= htmlspecialchars($exp['exp_note']) ?></td>
-                        <td class="text-end money-text text-danger fw-bold fs-5">฿<?= number_format($exp['exp_amount'], 2) ?></td>
-                        <td class="text-center no-print">
-                            <a href="?start_date=<?= $date_start ?>&end_date=<?= $date_end ?>&del_exp=<?= $exp['exp_id'] ?>" 
-                               class="btn btn-light rounded-circle p-2 text-danger" onclick="return confirm('ยืนยันการลบค่าใช้จ่ายนี้?')">
-                                <i class="fa fa-trash"></i>
-                            </a>
-                        </td>
-                    </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
-
         <!-- Ledger Table -->
-        <div class="d-flex justify-content-between align-items-center mb-4 mt-5">
+        <div class="d-flex justify-content-between align-items-center mb-4 no-print">
             <h4 class="fw-bold mb-0" style="font-family: 'Chakra Petch';">รายการลูกค้า (Revenue)</h4>
             <span class="badge bg-white text-dark shadow-sm rounded-pill px-3 py-2 border">พบออเดอร์ทั้งหมด <?= $order_count ?> รายการ</span>
         </div>
@@ -392,56 +340,23 @@ $net_profit = $total_grand - $total_expense;
             </table>
         </div>
 
-        <!-- Footer signatures for print -->
-        <div class="row mt-5 d-none d-print-flex text-center small">
-            <div class="col-4">
-                <div style="height: 80px; border-bottom: 1px solid #ccc; width: 180px; margin: auto;"></div>
-                <div class="mt-3 fw-bold">ผู้รวบรวมบัญชี</div>
+        <!-- Signature Section (Thai Official Style) -->
+        <div class="signature-section only-print">
+            <div class="sig-box">
+                <br>
+                (ลงชื่อ)<span class="sig-line"></span><br>
+                ( ..................................................................... )<br>
+                ตำแหน่ง ผู้จัดทำรายงาน
             </div>
-            <div class="col-4">
-                <div style="height: 80px; border-bottom: 1px solid #ccc; width: 180px; margin: auto;"></div>
-                <div class="mt-3 fw-bold">ผู้ตรวจสอบ</div>
-            </div>
-            <div class="col-4">
-                <div style="height: 80px; border-bottom: 1px solid #ccc; width: 180px; margin: auto;"></div>
-                <div class="mt-3 fw-bold">ผู้อนุมัติรายรับ</div>
+            <div class="sig-box">
+                <br>
+                (ลงชื่อ)<span class="sig-line"></span><br>
+                ( ..................................................................... )<br>
+                ตำแหน่ง ผู้ตรวจสอบ / เจ้าของกิจการ
             </div>
         </div>
-    </div>
-
-    <!-- Expense Modal -->
-    <div class="modal fade no-print" id="expenseModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content glass-card overflow-hidden">
-                <form method="post">
-                    <div class="modal-header border-0 p-4">
-                        <h5 class="fw-bold mb-0"><i class="fa fa-plus-circle me-2 text-danger"></i> บันทึกค่าใช้จ่ายใหม่</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body p-4 bg-light bg-opacity-50">
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold">ชื่อรายการค่าใช้จ่าย</label>
-                            <input type="text" name="exp_name" class="form-control rounded-4 border-0 shadow-sm" placeholder="เช่น ค่าผงซักฟอก, ค่าน้ำ, ค่าไฟ" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold">จำนวนเงิน (บาท)</label>
-                            <input type="number" step="0.01" name="exp_amount" class="form-control rounded-4 border-0 shadow-sm" placeholder="0.00" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold">วันที่จ่าย (ปล่อยว่างถ้าเป็นปัจจุบัน)</label>
-                            <input type="datetime-local" name="exp_date" class="form-control rounded-4 border-0 shadow-sm">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold">หมายเหตุ (ถ้ามี)</label>
-                            <textarea name="exp_note" class="form-control rounded-4 border-0 shadow-sm" rows="3"></textarea>
-                        </div>
-                    </div>
-                    <div class="modal-footer border-0 p-4 pt-0 bg-light bg-opacity-50">
-                        <button type="button" class="btn btn-white fw-bold rounded-pill px-4" data-bs-dismiss="modal">ยกเลิก</button>
-                        <button type="submit" name="add_expense" class="btn btn-danger fw-bold rounded-pill px-4">บันทึกรายการ</button>
-                    </div>
-                </form>
-            </div>
+        <div class="only-print" style="text-align: right; margin-top: 50px; font-size: 14pt;">
+            พิมพ์โดยระบบบริหารจัดการร้านซักรีด เมื่อวันที่ <?= date('j') . " " . $thai_months[(int)date('n')] . " " . (date('Y')+543) . " เวลา " . date('H:i') . " น." ?>
         </div>
     </div>
 
@@ -465,22 +380,6 @@ $net_profit = $total_grand - $total_expense;
             const modal = new bootstrap.Modal(document.getElementById('historyModal'));
             modal.show();
             fetch('get_member_history.php?m_id=' + m_id).then(r => r.text()).then(h => { document.getElementById('historyBody').innerHTML = h; });
-        }
-
-        function printOfficialReceipt(divId) {
-            const printContents = document.getElementById(divId).innerHTML;
-            let iframe = document.getElementById('printFrame');
-            if (!iframe) {
-                iframe = document.createElement('iframe');
-                iframe.id = 'printFrame';
-                iframe.style.display = 'none';
-                document.body.appendChild(iframe);
-            }
-            const doc = iframe.contentWindow.document;
-            doc.open();
-            doc.write('<html><head><title>Receipt</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"><style>@import url("https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;700&display=swap"); body { font-family: "Sarabun", sans-serif; padding: 40px; } .table-dark { background-color: #343a40 !important; color: #fff !important; -webkit-print-color-adjust: exact; } .table-light { background-color: #f8f9fa !important; -webkit-print-color-adjust: exact; } h4, h3 { color: #4f46e5 !important; -webkit-print-color-adjust: exact; } @media print { body { padding: 0; } }</style></head><body>' + printContents + '</body></html>');
-            doc.close();
-            setTimeout(() => { iframe.contentWindow.focus(); iframe.contentWindow.print(); }, 500);
         }
     </script>
 </body>

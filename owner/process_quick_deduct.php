@@ -13,6 +13,12 @@ if (isset($_POST['m_id'])) {
     $extra_note = $conn->real_escape_string($_POST['extra_note'] ?? '');
     $owner_note = $conn->real_escape_string($_POST['owner_note'] ?? '');
     
+    // รวมเวลานัดหมาย
+    $p_val = $_POST['est_pickup'] ?? '-';
+    $d_val = $_POST['est_delivery'] ?? '-';
+    $combined_est = "นัดรับ: $p_val | นัดส่ง: $d_val";
+    $est_info = $conn->real_escape_string($combined_est);
+    
     // 🧺 จัดการรายการผ้าแยกย่อย
     $item_names = $_POST['item_names'] ?? [];
     $item_qtys = $_POST['item_qtys'] ?? [];
@@ -59,8 +65,8 @@ if (isset($_POST['m_id'])) {
         }
 
         // 2. สร้างออเดอร์
-        $sql_order = "INSERT INTO orders (order_id, m_id, order_date, order_status, order_items_count, order_note, order_sum, order_extra_note, order_extra_cash, order_pickup_round, order_owner_note) 
-                      VALUES ('$order_id', '$m_id', '$date', $status, $amount, '$note', $extra_cash, '$extra_note', $extra_cash, $next_round, '$owner_note')";
+        $sql_order = "INSERT INTO orders (order_id, m_id, order_date, order_status, order_items_count, order_note, order_sum, order_extra_note, order_extra_cash, order_pickup_round, order_owner_note, order_est_pickup) 
+                      VALUES ('$order_id', '$m_id', '$date', $status, $amount, '$note', $extra_cash, '$extra_note', $extra_cash, $next_round, '$owner_note', '$est_info')";
         
         if (!$conn->query($sql_order)) throw new Exception("Order insertion failed: " . $conn->error);
 

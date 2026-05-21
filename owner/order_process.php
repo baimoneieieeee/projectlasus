@@ -91,6 +91,7 @@ $st = $status_list[$order['order_status']] ?? ['label' => 'ไม่ทราบ
     <title>จัดการออเดอร์ #<?= $order_id ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600;700&display=swap');
         body { background: #f1f5f9; font-family: 'Chakra Petch', sans-serif; }
@@ -101,8 +102,21 @@ $st = $status_list[$order['order_status']] ?? ['label' => 'ไม่ทราบ
         .quota-error { color: #dc3545; font-weight: bold; font-size: 0.85rem; margin-top: 5px; display: none; }
         .status-badge { padding: 8px 20px; border-radius: 50px; font-weight: 700; font-size: 0.9rem; }
         @media (max-width: 991px) { .main-content { margin-left: 0; padding: 15px; } }
+        /* Flatpickr Custom */
+        .flatpickr-calendar { border-radius: 15px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
     </style>
 </head>
+<?php
+// แก้ไขเวลานัดหมาย
+if (isset($_POST['update_appointment'])) {
+    $new_p = $_POST['edit_pickup'] ?? '';
+    $new_d = $_POST['edit_delivery'] ?? '';
+    $combined = $conn->real_escape_string("นัดรับ: $new_p | นัดส่ง: $new_d");
+    $conn->query("UPDATE orders SET order_est_pickup = '$combined' WHERE order_id = '$order_id'");
+    header("Location: order_process.php?id=$order_id");
+    exit;
+}
+?>
 <body>
     <?php include 'sidebar.php'; ?>
 
@@ -158,6 +172,54 @@ $st = $status_list[$order['order_status']] ?? ['label' => 'ไม่ทราบ
                         <div class="p-3 bg-primary bg-opacity-10 text-primary rounded-3 text-center mb-3">
                             <i class="fa fa-gem me-1"></i> สิทธิ์รายเดือนคงเหลือ: <b id="display_quota"><?= $member_quota ?></b> ชิ้น
                         </div>
+                    <?php endif; ?>
+
+                    <?php if(!empty($order['order_est_pickup'])): ?>
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <small class="fw-bold text-muted d-block"><i class="fa fa-calendar-check me-1"></i> เวลานัดหมาย:</small>
+                            <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none" data-bs-toggle="modal" data-bs-target="#editAppointmentModal">
+                                <i class="fa fa-edit"></i> แก้ไข
+                            </button>
+                        </div>
+                        <?php 
+                            $thai_months = [
+                                1 => 'มกราคม', 2 => 'กุมภาพันธ์', 3 => 'มีนาคม', 4 => 'เมษายน',
+                                5 => 'พฤษภาคม', 6 => 'มิถุนายน', 7 => 'กรกฎาคม', 8 => 'สิงหาคม',
+                                9 => 'กันยายน', 10 => 'ตุลาคม', 11 => 'พฤศจิกายน', 12 => 'ธันวาคม'
+                            ];
+                            $times = explode('|', $order['order_est_pickup']);
+                            $raw_p = ''; $raw_d = '';
+                            foreach($times as $t):
+                                $t = trim($t);
+                                if(empty($t)) continue;
+
+                                // แปลงรูปแบบวันที่เป็นไทย
+                                if (preg_match('/(.*?):\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})/', $t, $matches)) {
+                                    $label = $matches[1];
+                                    $raw_val = $matches[2];
+                                    if(strpos($label, 'นัดรับ') !== false) $raw_p = $raw_val;
+                                    if(strpos($label, 'นัดส่ง') !== false) $raw_d = $raw_val;
+
+                                    $ts = strtotime($raw_val);
+                                    $d = date('j', $ts);
+                                    $m = $thai_months[(int)date('n', $ts)];
+                                    $y = (int)date('Y', $ts) + 543;
+                                    $time = date('H:i', $ts);
+                                    $display_text = "$label: วันที่ $d $m $y เวลา $time น.";
+                                } else {
+                                    $display_text = $t;
+                                }
+
+                                $icon = (strpos($t, 'นัดรับ') !== false) ? 'fa-truck-pickup' : 'fa-paper-plane';
+                                $color = (strpos($t, 'นัดรับ') !== false) ? 'text-primary' : 'text-success';
+                        ?>
+                            <div class="small mb-1">
+                                <i class="fa <?= $icon ?> <?= $color ?> me-1" style="width: 15px;"></i>
+                                <span class="text-dark fw-bold"><?= htmlspecialchars($display_text) ?></span>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
                     <?php endif; ?>
 
                     <div class="border-top pt-3">
@@ -228,21 +290,19 @@ $st = $status_list[$order['order_status']] ?? ['label' => 'ไม่ทราบ
                             </div>
                         </div>
                     <?php else: ?>
-                        <div class="d-flex justify-content-between align-items-center mb-4">
-                            <h5 class="fw-bold mb-0">บันทึกผ้า</h5>
-                            <div class="text-end">
-                                <small class="text-muted d-block" style="font-size: 0.7rem;">ค่าจัดส่งที่ต้องบวกเพิ่ม</small>
-                                <span class="badge bg-warning text-dark">฿<?= number_format($order['order_shipping_fee'], 2) ?></span>
-                            </div>
-                        </div>
-                        <div class="p-3 bg-primary bg-opacity-10 rounded-3 mb-4 small border border-primary border-opacity-25">
-                            <i class="fa fa-info-circle me-1"></i> กรุณาเลือกรายการผ้าจริงที่ได้รับเพื่อหักโควตาหรือคิดเงินเพิ่ม (ค่าจัดส่งจะถูกคำนวณรวมให้อัตโนมัติ)
-                        </div>
+                        <!-- Shipping fee moved inside #form_section below -->
                     <?php endif; ?>
 
                     <div id="form_section" style="<?= $is_saved ? 'display:none;' : '' ?>">
-                        <div class="d-flex justify-content-end mb-3">
-                            <button type="button" class="btn btn-primary btn-sm rounded-pill px-3" onclick="addItemRow()">เพิ่มรายการ</button>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="fw-bold mb-0">บันทึกผ้า</h5>
+                            <div class="text-end">
+                                <span class="badge bg-warning text-dark fs-6">ค่าจัดส่ง: ฿<?= number_format($order['order_shipping_fee'], 2) ?></span>
+                                <button type="button" class="btn btn-primary btn-sm rounded-pill px-3 ms-2" onclick="addItemRow()">+ เพิ่มรายการ</button>
+                            </div>
+                        </div>
+                        <div class="p-3 bg-primary bg-opacity-10 rounded-3 mb-4 small border border-primary border-opacity-25">
+                            <i class="fa fa-info-circle me-1"></i> กรุณาเลือกรายการผ้าจริงที่ได้รับเพื่อหักโควตาหรือคิดเงินเพิ่ม (ค่าจัดส่งรวมให้อัตโนมัติ)
                         </div>
                         <form method="post" action="deduct_monthly.php" id="mainForm">
                             <input type="hidden" name="order_id" value="<?= $order_id ?>">
@@ -269,13 +329,17 @@ $st = $status_list[$order['order_status']] ?? ['label' => 'ไม่ทราบ
                                 </div>
                             </div>
 
-                            <div class="p-3 bg-dark text-white rounded-3 text-center mb-4">
+                            <div class="p-3 bg-dark text-white rounded-4 text-center mb-4">
+                                <div class="d-flex justify-content-between px-3 mb-2 small opacity-75 border-bottom border-secondary pb-2">
+                                    <span>ค่าบริการจัดส่ง:</span>
+                                    <span>฿<?= number_format($order['order_shipping_fee'], 2) ?></span>
+                                </div>
                                 <h3 class="fw-bold mb-0">฿<span id="grand_total">0.00</span></h3>
                                 <small class="opacity-50">ยอดรวมสุทธิ</small>
                             </div>
 
                             <div class="mb-4">
-                                <label class="small fw-bold text-muted">หมายเหตุ/เวลานัดส่งคืน:</label>
+                                <label class="small fw-bold text-muted">หมายเหตุ</label>
                                 <input type="text" name="order_owner_note" class="form-control" placeholder="ระบุข้อความถึงลูกค้า" value="<?= htmlspecialchars($order['order_owner_note']) ?>">
                             </div>
 
@@ -396,6 +460,50 @@ $st = $status_list[$order['order_status']] ?? ['label' => 'ไม่ทราบ
         if(prefilled.length > 0) prefilled.forEach(i => addItemRow(i.id, i.qty));
         else if(document.getElementById('items_container')) addItemRow();
     };
+    </script>
+    
+    <!-- Modal แก้ไขเวลานัดหมาย -->
+    <div class="modal fade" id="editAppointmentModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <form method="post">
+                    <div class="modal-header border-0 pb-0">
+                        <h5 class="modal-title fw-bold">แก้ไขเวลานัดหมาย</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-muted">เวลานัดรับผ้า</label>
+                            <input type="text" name="edit_pickup" class="form-control rounded-3 edit-datetime-picker" value="<?= $raw_p ?>" placeholder="เลือกวันที่และเวลา">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-muted">เวลานัดส่งคืน</label>
+                            <input type="text" name="edit_delivery" class="form-control rounded-3 edit-datetime-picker" value="<?= $raw_d ?>" placeholder="เลือกวันที่และเวลา">
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0">
+                        <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">ยกเลิก</button>
+                        <button type="submit" name="update_appointment" class="btn btn-primary rounded-pill px-4 fw-bold">บันทึกการแก้ไข</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/th.js"></script>
+    <script>
+    // ตั้งค่า Flatpickr ภาษาไทย
+    flatpickr(".edit-datetime-picker", {
+        locale: "th",
+        enableTime: true,
+        dateFormat: "Y-m-d H:i",
+        time_24hr: true,
+        minTime: "09:00",
+        maxTime: "18:00",
+        disableMobile: "true"
+    });
     </script>
 </body>
 </html>

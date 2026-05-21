@@ -78,14 +78,21 @@ if (isset($_POST['confirm_request'])) {
         }
 
         // 3. สร้างออเดอร์ใหม่
-        $order_status = $is_pkg ? 0 : 1;
+        // ปรับปรุง: ให้งานซักทุกประเภทเริ่มต้นที่สถานะ 0 (รอรับผ้า) 
+        // เพื่อให้เจ้าของร้านบันทึกรายการผ้าจริงก่อนค่อยเปลี่ยนเป็นสถานะ 1 (รอชำระเงิน)
+        $order_status = 0; 
         $order_note = $is_pkg ? $rq_note : "";
-        $est_pickup = $conn->real_escape_string($_POST['est_pickup'] ?? '');
-        $est_delivery = $conn->real_escape_string($_POST['est_delivery'] ?? ''); // เพิ่มใหม่
+        
+        // รับค่าจาก Flatpickr แล้วรวมเป็นข้อความเดียวเพื่อบันทึกลงช่องเดียว (ไม่ต้องแก้ฐานข้อมูล)
+        $p_val = $_POST['est_pickup'] ?? '-';
+        $d_val = $_POST['est_delivery'] ?? '-';
+        $combined_est = "นัดรับ: $p_val | นัดส่ง: $d_val";
+        $est_info = $conn->real_escape_string($combined_est);
+
         $final_initial_sum = $initial_sum + $shipping_fee;
 
-        $conn->query("INSERT INTO orders (order_id, m_id, rq_id, order_date, order_status, order_sum, order_shipping_fee, order_note, order_pickup_round, order_address, order_est_pickup, order_owner_note) 
-                      VALUES ('$order_id', '$m_id', '$rq_id', '$date', '$order_status', '$final_initial_sum', '$shipping_fee', '$order_note', '$round_num', '$address', '$est_pickup', '$est_delivery')");
+        $conn->query("INSERT INTO orders (order_id, m_id, rq_id, order_date, order_status, order_sum, order_shipping_fee, order_note, order_pickup_round, order_address, order_est_pickup) 
+                      VALUES ('$order_id', '$m_id', '$rq_id', '$date', '$order_status', '$final_initial_sum', '$shipping_fee', '$order_note', '$round_num', '$address', '$est_info')");
         
         $conn->commit();
         header("Location: manage_orders.php");
@@ -137,6 +144,23 @@ $rate_standard = (float)($shop_info['shop_rate'] ?? 0);
     <title>จัดการคำขอ - Laundry</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <style>
+        .main-content label {
+            display: block;
+            margin: 0.4rem 0 !important;
+            font-weight: 600;
+        }
+        .main-content input {
+            margin: 0.4rem 0 !important;
+        }
+        /* ตกแต่ง Flatpickr ให้เข้ากับ Bootstrap */
+        .flatpickr-calendar {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            border-radius: 15px;
+            border: 1px solid #e2e8f0;
+        }
+    </style>
 </head>
 <body class="bg-light">
     <?php include 'sidebar.php'; ?>
@@ -215,12 +239,14 @@ $rate_standard = (float)($shop_info['shop_rate'] ?? 0);
                                 <input type="hidden" name="m_id" value="<?= $rq['m_id'] ?>">
                                 <div class="mb-2">
                                     <label class="form-label smaller fw-bold text-muted mb-1"><i class="fa fa-clock me-1"></i> เวลานัดรับผ้า</label>
-                                    <input type="text" name="est_pickup" class="form-control form-control-sm rounded-pill px-3" placeholder="เช่น วันนี้ 14:00 น.">
+                                    <input type="text" name="est_pickup" class="form-control form-control-sm rounded-3 datetime-picker" 
+                                           placeholder="คลิกเพื่อเลือกวันที่และเวลา" readonly value="<?= date('Y-m-d H:i') ?>">
                                 </div>
                                 <?php if(!$is_membership): // 🚩 โชว์เวลาส่งเฉพาะงานซักปกติ ไม่โชว์ตอนสมัครสมาชิก ?>
                                 <div class="mb-3">
                                     <label class="form-label smaller fw-bold text-muted mb-1"><i class="fa fa-paper-plane me-1"></i> เวลานัดส่งคืน</label>
-                                    <input type="text" name="est_delivery" class="form-control form-control-sm rounded-pill px-3" placeholder="เช่น พรุ่งนี้ 10:00 น.">
+                                    <input type="text" name="est_delivery" class="form-control form-control-sm rounded-3 datetime-picker" 
+                                           placeholder="คลิกเพื่อเลือกวันที่และเวลา" readonly value="<?= date('Y-m-d H:i') ?>">
                                 </div>
                                 <?php endif; ?>
                                 <button type="submit" name="confirm_request" class="btn btn-primary w-100 rounded-pill fw-bold py-2 shadow-sm">
@@ -302,7 +328,20 @@ $rate_standard = (float)($shop_info['shop_rate'] ?? 0);
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/th.js"></script>
     <script>
+        // ตั้งค่า Flatpickr เป็นภาษาไทย
+        flatpickr(".datetime-picker", {
+            locale: "th",
+            enableTime: true,
+            dateFormat: "Y-m-d H:i",
+            time_24hr: true,
+            minTime: "09:00",
+            maxTime: "18:00",
+            disableMobile: "true"
+        });
+
         const rejectModal = document.getElementById('rejectModal');
         if (rejectModal) {
             rejectModal.addEventListener('show.bs.modal', event => {
